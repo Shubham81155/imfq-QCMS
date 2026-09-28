@@ -99,6 +99,7 @@ def test_multi_tier_redis_caching_and_isolation():
 
 def test_proactive_cache_invalidation_on_project_lifecycle(client, auth_context):
     """Verify that updating/creating projects proactively clears the KPI summary cache."""
+    from unittest.mock import patch
     org_id = auth_context['org_id']
 
     # 1. Warm up dashboard KPI summary cache
@@ -106,14 +107,19 @@ def test_proactive_cache_invalidation_on_project_lifecycle(client, auth_context)
     assert res1.status_code == 200
     data1 = res1.get_json()
 
-    # 2. Add a new project
-    res_create = client.post('/api/projects/', json={
-        "title": "Cache Invalidation Test Project",
-        "category": "Quality",
-        "description": "Testing cache clearing",
-        "work_area": "Plant 1",
-        "member_ids": []
-    }, headers=auth_context['headers'])
+    # 2. Add a new project (bypass subscription limit so this test is hermetic
+    #    regardless of how many existing projects are in the shared test DB)
+    with patch(
+        'app.domain.services.subscription_service.SubscriptionManager.check_project_limit',
+        return_value=(True, 'Unlimited')
+    ):
+        res_create = client.post('/api/projects/', json={
+            "title": "Cache Invalidation Test Project",
+            "category": "Quality",
+            "description": "Testing cache clearing",
+            "work_area": "Plant 1",
+            "member_ids": []
+        }, headers=auth_context['headers'])
     assert res_create.status_code in (200, 201)
 
     # 3. Query KPI summary again and verify updated pipeline
