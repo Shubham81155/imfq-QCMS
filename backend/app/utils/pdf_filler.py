@@ -35,7 +35,12 @@ def get_v(obj, data, path, fallback="--"):
     if val is None and obj is not None:
         attr = path.split('.')[-1]
         val = getattr(obj, attr, None)
-    return str(val) if val is not None and str(val).strip() else fallback
+    if val is not None:
+        s_val = str(val).strip()
+        if "OctaQube" in s_val or "{OctaQube" in s_val:
+            return fallback
+        return s_val if s_val else fallback
+    return fallback
 
 def generate_pareto_svg(check_sheet_data):
     """
@@ -1041,18 +1046,18 @@ def build_qc_story_html(project_id):
 
     team_leader = (project.team_leader.full_name or project.team_leader.username) if project.team_leader else get_v(s1, d1, "init.team_leader")
     if not team_leader or team_leader == "--":
-        team_leader = "Team Leader"
+        team_leader = "--"
 
     facilitator = (project.facilitator.full_name or project.facilitator.username) if project.facilitator else get_v(s1, d1, "init.facilitator")
     if not facilitator or facilitator == "--":
-        facilitator = "Quality Facilitator"
+        facilitator = "--"
 
     reviewer = (project.reviewer.full_name or project.reviewer.username) if project.reviewer else get_v(s1, d1, "review.reviewer")
     if not reviewer or reviewer == "--":
-        reviewer = "Project Reviewer"
+        reviewer = "--"
     
     m_list = [m.full_name or m.username for m in (project.members or [])]
-    members_str = ", ".join(m_list) if m_list else "Ramesh P., Vikram S., Anita M., Suresh K."
+    members_str = ", ".join(m_list) if m_list else "--"
 
     def parse_clean_date(val, fallback=""):
         if not val:
@@ -1254,36 +1259,36 @@ def build_qc_story_html(project_id):
     quality_impact_val = get_v(s1, d1, "problem_5w2h.quality_impact")
     if quality_impact_val == "--": quality_impact_val = get_v(s1, d1, "justification.quality")
     if quality_impact_val == "--": quality_impact_val = get_v(s1, d1, "quality_impact")
-    if quality_impact_val == "--": quality_impact_val = "Defect rate 15% against target of 0.5%. Out-of-control weld process."
+    if quality_impact_val == "--": quality_impact_val = "--"
 
     cost_scrap_val = get_v(s1, d1, "problem_5w2h.financial_impact")
     if cost_scrap_val == "--": cost_scrap_val = get_v(s1, d1, "justification.financial")
     if cost_scrap_val == "--": cost_scrap_val = get_v(s1, d1, "financial_impact")
-    if cost_scrap_val == "--": cost_scrap_val = "Scrap cost Rs. 12,500/month; risk of Rs. 50,000 penalty."
+    if cost_scrap_val == "--": cost_scrap_val = "--"
 
     safety_ease_val = get_v(s1, d1, "problem_5w2h.safety_impact")
     if safety_ease_val == "--": safety_ease_val = get_v(s1, d1, "justification.safety")
     if safety_ease_val == "--": safety_ease_val = get_v(s1, d1, "safety_impact")
-    if safety_ease_val == "--": safety_ease_val = "Coolant spills on shop floor at Station 4 present slip hazards."
+    if safety_ease_val == "--": safety_ease_val = "--"
 
     rationale_val = get_v(s1, d1, "justification.why_work_on_this")
     if rationale_val == "--": rationale_val = get_v(s1, d1, "problem_5w2h.why_work_on_this")
     if rationale_val == "--": rationale_val = get_v(s1, d1, "problem_5w2h.why_organization_work_on_this")
     if rationale_val == "--": rationale_val = get_v(s1, d1, "justification.why_project")
     if rationale_val == "--": rationale_val = get_v(s1, d1, "theme_target_schedule.expected_benefit")
-    if rationale_val == "--": rationale_val = "To avoid Rs. 50,000 OEM penalty, eliminate shop-floor safety hazard, and restore process capability."
+    if rationale_val == "--": rationale_val = "--"
 
     # Section 2
     prob_desc = get_v(s1, d1, "background_5w2h.problem_definition")
-    if prob_desc == "--": prob_desc = project.description or "Observed process parameter variations causing defect rate spikes during assembly."
+    if prob_desc == "--": prob_desc = project.description or "--"
     
     curr_kpi = get_v(s1, d1, "theme_target_schedule.current_level")
     if curr_kpi == "--": curr_kpi = get_v(s1, d1, "current_performance.current_kpi")
-    if curr_kpi == "--": curr_kpi = "15.0% defect rate (150,000 ppm)"
+    if curr_kpi == "--": curr_kpi = "--"
 
     target_kpi = get_v(s1, d1, "theme_target_schedule.target_level")
     if target_kpi == "--": target_kpi = get_v(s1, d1, "theme_target_schedule.target_kpi")
-    if target_kpi == "--": target_kpi = "Target Level < 0.5% defect rate"
+    if target_kpi == "--": target_kpi = "--"
 
     target_date = ""
     milestones_list = d1.get('theme_target_schedule', {}).get('milestones') or []
@@ -1364,85 +1369,60 @@ def build_qc_story_html(project_id):
     why_rows_html = ""
     if why_chain and isinstance(why_chain, list) and len(why_chain) > 0:
         for idx, item in enumerate(why_chain[:2]):
-            cat = item.get('category') or item.get('problem') or 'Machine / Method'
-            why1 = item.get('why1') or 'Weld Joint leakage observed at pressure'
-            why2 = item.get('why2') or 'Arc drift causing incomplete joint penetration'
-            why3 = item.get('why3') or 'Nozzle diameter expansion due to thermal erosion'
-            why4 = item.get('why4') or 'Nozzle operating hours exceeded limit'
-            why5 = item.get('why5') or 'Lack of automated PM alert trigger in QMS'
+            cat = item.get('category') or item.get('problem') or f'Root Cause Chain {idx+1}'
+            why1 = item.get('why1') or '--'
+            why2 = item.get('why2') or '--'
+            why3 = item.get('why3') or '--'
+            why4 = item.get('why4') or '--'
+            why5 = item.get('why5') or '--'
 
-            v1 = (item.get('val1') or item.get('validation_method1') or '').strip()
-            v2 = (item.get('val2') or item.get('validation_method2') or '').strip()
-            v3 = (item.get('val3') or item.get('validation_method3') or '').strip()
-            v4 = (item.get('val4') or item.get('validation_method4') or '').strip()
-            v5 = (item.get('val5') or item.get('validation') or item.get('validation_method5') or '').strip()
+            v1 = (item.get('val1') or item.get('validation_method1') or '').strip() or '--'
+            v2 = (item.get('val2') or item.get('validation_method2') or '').strip() or '--'
+            v3 = (item.get('val3') or item.get('validation_method3') or '').strip() or '--'
+            v4 = (item.get('val4') or item.get('validation_method4') or '').strip() or '--'
+            v5 = (item.get('val5') or item.get('validation') or item.get('validation_method5') or '').strip() or '--'
 
-            why_rows_html += f'''
-            <tr>
-              <td rowspan="5"><b>{html.escape(cat)}</b><br><span style="font-size: 6.5pt; color: #64748b;">(Root Cause Chain {idx+1})</span></td>
-              <td><b>Why 1</b></td>
-              <td>{html.escape(why1)}</td>
-              <td>{html.escape(v1)}</td>
-              <td>☑ YES &nbsp; ☐ NO</td>
-            </tr>
-            <tr>
-              <td><b>Why 2</b></td>
-              <td>{html.escape(why2)}</td>
-              <td>{html.escape(v2)}</td>
-              <td>☑ YES &nbsp; ☐ NO</td>
-            </tr>
-            <tr>
-              <td><b>Why 3</b></td>
-              <td>{html.escape(why3)}</td>
-              <td>{html.escape(v3)}</td>
-              <td>☑ YES &nbsp; ☐ NO</td>
-            </tr>
-            <tr>
-              <td><b>Why 4</b></td>
-              <td>{html.escape(why4)}</td>
-              <td>{html.escape(v4)}</td>
-              <td>☑ YES &nbsp; ☐ NO</td>
-            </tr>
-            <tr style="background-color: #fef3c7;">
-              <td><b>Why 5</b></td>
-              <td><b>{html.escape(why5)}</b></td>
-              <td>{html.escape(v5)}</td>
-              <td style="font-weight: bold; color: #16a34a;">ROOT CAUSE</td>
-            </tr>
-            '''
+            if any(w != '--' for w in [why1, why2, why3, why4, why5]):
+                why_rows_html += f'''
+                <tr>
+                  <td rowspan="5"><b>{html.escape(cat)}</b><br><span style="font-size: 6.5pt; color: #64748b;">(Root Cause Chain {idx+1})</span></td>
+                  <td><b>Why 1</b></td>
+                  <td>{html.escape(why1)}</td>
+                  <td>{html.escape(v1)}</td>
+                  <td>{'☑ YES' if why1 != '--' else '☐ NO'}</td>
+                </tr>
+                <tr>
+                  <td><b>Why 2</b></td>
+                  <td>{html.escape(why2)}</td>
+                  <td>{html.escape(v2)}</td>
+                  <td>{'☑ YES' if why2 != '--' else '☐ NO'}</td>
+                </tr>
+                <tr>
+                  <td><b>Why 3</b></td>
+                  <td>{html.escape(why3)}</td>
+                  <td>{html.escape(v3)}</td>
+                  <td>{'☑ YES' if why3 != '--' else '☐ NO'}</td>
+                </tr>
+                <tr>
+                  <td><b>Why 4</b></td>
+                  <td>{html.escape(why4)}</td>
+                  <td>{html.escape(v4)}</td>
+                  <td>{'☑ YES' if why4 != '--' else '☐ NO'}</td>
+                </tr>
+                <tr style="background-color: #fef3c7;">
+                  <td><b>Why 5</b></td>
+                  <td><b>{html.escape(why5)}</b></td>
+                  <td>{html.escape(v5)}</td>
+                  <td style="font-weight: bold; color: #16a34a;">ROOT CAUSE</td>
+                </tr>
+                '''
 
     if not why_rows_html:
         why_rows_html = '''
         <tr>
-          <td rowspan="5"><b>Machine / Pneumatics</b><br><span style="font-size: 6.5pt; color: #64748b;">(Primary Root Cause)</span></td>
-          <td><b>Why 1</b></td>
-          <td>Crimping pressure fluctuations during high-speed cycle</td>
-          <td>Pressure log review</td>
-          <td>☑ YES &nbsp; ☐ NO</td>
-        </tr>
-        <tr>
-          <td><b>Why 2</b></td>
-          <td>Pneumatic valve response lag under load</td>
-          <td>Valve bench test</td>
-          <td>☑ YES &nbsp; ☐ NO</td>
-        </tr>
-        <tr>
-          <td><b>Why 3</b></td>
-          <td>Air filter clogging due to oil contamination</td>
-          <td>Visual inspection</td>
-          <td>☑ YES &nbsp; ☐ NO</td>
-        </tr>
-        <tr>
-          <td><b>Why 4</b></td>
-          <td>PM schedule overdue by 2 weeks</td>
-          <td>PM log audit</td>
-          <td>☑ YES &nbsp; ☐ NO</td>
-        </tr>
-        <tr style="background-color: #fef3c7;">
-          <td><b>Why 5</b></td>
-          <td><b>Lack of automated PM alert trigger in shop floor QMS</b></td>
-          <td>Root cause confirmed via maintenance log audit</td>
-          <td style="font-weight: bold; color: #16a34a;">ROOT CAUSE</td>
+          <td colspan="5" style="text-align: center; color: #94a3b8; font-style: italic; padding: 12px;">
+            No 5-Why root cause analysis recorded for this project yet.
+          </td>
         </tr>
         '''
 

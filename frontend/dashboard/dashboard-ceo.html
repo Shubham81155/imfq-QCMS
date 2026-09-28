@@ -678,6 +678,7 @@
             },
 
             async init() {
+                window.ceoDash = this;
                 try {
                     if (typeof OctaQube !== 'undefined') OctaQube.init();
                     
@@ -1235,7 +1236,7 @@
                     const timelineVal = document.getElementById('comparePeriod')?.value || document.getElementById('savingsTimelineFilter')?.value || '6';
                     // Fetch full strategic overview data safely
                     const results = await Promise.allSettled([
-                        api.get('/ceo/executive-summary'),
+                        api.get('/ceo/executive-summary?timeline=' + encodeURIComponent(timelineVal)),
                         api.get('/ceo/strategic-analytics?timeline=' + encodeURIComponent(timelineVal)),
                         api.get('/ceo/org-health'),
                         api.get('/ceo/priority-initiatives'),
@@ -1744,7 +1745,13 @@
             },
 
             renderPipelineChart(pipeline) {
-                if (this.charts.pipeline) this.charts.pipeline.destroy();
+                const container = document.getElementById('pipelineChart');
+                if (!container) return;
+                if (this.charts.pipeline) {
+                    try { this.charts.pipeline.destroy(); } catch (_) {}
+                    this.charts.pipeline = null;
+                }
+                container.innerHTML = '';
                 
                 const cleanPipeline = {};
                 for (const [k, v] of Object.entries(pipeline || {})) {
@@ -1800,18 +1807,41 @@
             },
 
             renderSavingsChart(trend) {
-                if (this.charts.savings) this.charts.savings.destroy();
-                
-                const labels = (trend.savings_trend || []).map(t => t.month);
-                const actual = (trend.savings_trend || []).map(t => t.savings);
-                const ma = trend.moving_average || [];
-                const fore = trend.forecast || [];
+                const chartEl = document.getElementById('savingsChart');
+                if (!chartEl || !trend) return;
 
-                this.charts.savings = new ApexCharts(document.getElementById('savingsChart'), {
+                if (this.charts.savings) {
+                    try { this.charts.savings.destroy(); } catch (_) {}
+                    this.charts.savings = null;
+                }
+                chartEl.innerHTML = '';
+
+                const trendItems = trend.savings_trend || [];
+                const actual = trendItems.map(t => t.savings);
+                const ma = [...(trend.moving_average || [])];
+                const fore = [...(trend.forecast || [])];
+
+                // Labels: prioritize backend categories that cover projection months
+                let labels = (trend.categories && Array.isArray(trend.categories) && trend.categories.length === fore.length)
+                    ? [...trend.categories]
+                    : trendItems.map(t => t.month);
+
+                // Pad labels if forecast has more points than labels
+                while (labels.length < fore.length) {
+                    labels.push(`+${labels.length - trendItems.length + 1} Mo (Proj)`);
+                }
+
+                // Pad actual and moving average with null for future projection months so lines don't drop to 0
+                const actualPadded = [...actual];
+                const maPadded = [...ma];
+                while (actualPadded.length < labels.length) actualPadded.push(null);
+                while (maPadded.length < labels.length) maPadded.push(null);
+
+                this.charts.savings = new ApexCharts(chartEl, {
                     chart: { type: 'area', height: 280, toolbar: { show: false } },
                     series: [
-                        { name: 'Actual Savings', data: actual },
-                        { name: 'Moving Average', data: ma },
+                        { name: 'Actual Savings', data: actualPadded },
+                        { name: 'Moving Average', data: maPadded },
                         { name: 'Projection Model', data: fore }
                     ],
                     xaxis: { categories: labels, labels: { style: { colors: 'var(--ds-text-muted)' } } },
@@ -1849,7 +1879,13 @@
             },
 
             renderHealthChart(health) {
-                if (this.charts.health) this.charts.health.destroy();
+                const container = document.getElementById('healthChart');
+                if (!container || !health) return;
+                if (this.charts.health) {
+                    try { this.charts.health.destroy(); } catch (_) {}
+                    this.charts.health = null;
+                }
+                container.innerHTML = '';
 
                 // Universal Standardized Color Mapping
                 const colorMap = {
@@ -2307,24 +2343,33 @@
                 if (headerSelect && headerSelect.value !== val) headerSelect.value = val;
                 if (cardSelect && cardSelect.value !== val) cardSelect.value = val;
 
+                const chartEl = document.getElementById('savingsChart');
+                if (chartEl) chartEl.style.opacity = '0.5';
+
                 OctaQube.toast('Analyzing metrics for selected timeline...', 'primary');
                 try {
-                    const [metrics, trend] = await Promise.all([
+                    const [metricsRes, trendRes] = await Promise.allSettled([
                         api.get('/ceo/executive-summary?timeline=' + encodeURIComponent(val) + '&t=' + Date.now()),
                         api.get('/ceo/strategic-analytics?timeline=' + encodeURIComponent(val) + '&t=' + Date.now())
                     ]);
+
+                    const metrics = metricsRes.status === 'fulfilled' ? metricsRes.value : null;
+                    const trend = trendRes.status === 'fulfilled' ? trendRes.value : null;
+
                     if (metrics) {
-                        this.renderKpiGrid(metrics);
-                        if (metrics.financial_impact) this.renderFinancialImpact(metrics.financial_impact);
-                        if (metrics.project_pipeline) this.renderPipelineChart(metrics.project_pipeline);
-                        if (metrics.project_health) this.renderHealthChart(metrics.project_health);
+                        try { this.renderKpiGrid(metrics); } catch (err) { console.warn('[CEO Dash] renderKpiGrid error:', err); }
+                        try { if (metrics.financial_impact) this.renderFinancialImpact(metrics.financial_impact); } catch (err) { console.warn('[CEO Dash] renderFinancialImpact error:', err); }
+                        try { if (metrics.project_pipeline) this.renderPipelineChart(metrics.project_pipeline); } catch (err) { console.warn('[CEO Dash] renderPipelineChart error:', err); }
+                        try { if (metrics.project_health) this.renderHealthChart(metrics.project_health); } catch (err) { console.warn('[CEO Dash] renderHealthChart error:', err); }
                     }
                     if (trend) {
-                        this.renderSavingsChart(trend);
-                        if (trend.quality_trend) this.renderQualityTrendChart(trend.quality_trend);
+                        try { this.renderSavingsChart(trend); } catch (err) { console.warn('[CEO Dash] renderSavingsChart error:', err); }
+                        try { if (trend.quality_trend) this.renderQualityTrendChart(trend.quality_trend); } catch (err) { console.warn('[CEO Dash] renderQualityTrendChart error:', err); }
                     }
                 } catch (e) {
                     console.error('[CEO Dash] Timeline filter failed:', e);
+                } finally {
+                    if (chartEl) chartEl.style.opacity = '1';
                 }
             },
 
@@ -2504,7 +2549,11 @@
             }
         };
 
-        document.addEventListener('DOMContentLoaded', () => ceoDash.init());
+        window.ceoDash = ceoDash;
+        document.addEventListener('DOMContentLoaded', () => {
+            window.ceoDash = ceoDash;
+            ceoDash.init();
+        });
     </script>
 
     <!-- Rejected Projects Modal for CEO -->

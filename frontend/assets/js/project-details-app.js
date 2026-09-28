@@ -3232,9 +3232,12 @@ const ProjectApp = {
 
         // 3. Pareto Charts
         const p2Canvas = document.getElementById('qc_s2_pareto_canvas');
-        if (p2Canvas && s2Obs.length > 0) {
+        const p2Container = p2Canvas ? p2Canvas.parentElement : null;
+        const validS2Obs = (s2Obs || []).filter(o => o && o.category && !String(o.category).includes('OctaQube') && parseFloat(o.value || 0) > 0);
+        
+        if (p2Canvas && validS2Obs.length > 0) {
             const counts = {};
-            s2Obs.forEach(o => { counts[o.category] = (counts[o.category] || 0) + parseFloat(o.value || 0); });
+            validS2Obs.forEach(o => { counts[o.category] = (counts[o.category] || 0) + parseFloat(o.value || 0); });
             const sorted = Object.entries(counts).sort((a,b) => b[1] - a[1]);
             const labels = sorted.map(x => x[0]);
             const values = sorted.map(x => x[1]);
@@ -3261,12 +3264,26 @@ const ProjectApp = {
                     }
                 }
             });
+        } else if (p2Container) {
+            if (window.qcS2ParetoChartInstance) {
+                window.qcS2ParetoChartInstance.destroy();
+                window.qcS2ParetoChartInstance = null;
+            }
+            p2Container.innerHTML = `
+                <div class="d-flex flex-column align-items-center justify-content-center h-100 text-muted text-xs p-3 text-center">
+                    <i data-lucide="bar-chart-2" class="mb-2 opacity-50" style="width:28px;height:28px;"></i>
+                    <span class="fw-semibold">No Defect Observation Data</span>
+                    <span class="text-xxs text-secondary mt-1">No stratified frequency observations recorded in Stage 2 yet.</span>
+                </div>`;
+            if (window.lucide) lucide.createIcons();
         }
 
         const p3Canvas = document.getElementById('qc_s3_pareto_canvas');
-        const s3Prior = s3.cause_prioritization || [];
-        if (p3Canvas && s3Prior.length > 0) {
-            const sorted = [...s3Prior].sort((a,b) => parseFloat(b.total || 0) - parseFloat(a.total || 0));
+        const p3Container = p3Canvas ? p3Canvas.parentElement : null;
+        const validS3Prior = (s3.cause_prioritization || []).filter(x => x && x.cause && !String(x.cause).includes('OctaQube') && String(x.cause).trim() !== '' && parseFloat(x.total || 0) > 0);
+        
+        if (p3Canvas && validS3Prior.length > 0) {
+            const sorted = [...validS3Prior].sort((a,b) => parseFloat(b.total || 0) - parseFloat(a.total || 0));
             const labels = sorted.map(x => x.cause);
             const values = sorted.map(x => parseFloat(x.total || 0));
             const total = values.reduce((a,b) => a+b, 0);
@@ -3292,6 +3309,18 @@ const ProjectApp = {
                     }
                 }
             });
+        } else if (p3Container) {
+            if (window.qcS3ParetoChartInstance) {
+                window.qcS3ParetoChartInstance.destroy();
+                window.qcS3ParetoChartInstance = null;
+            }
+            p3Container.innerHTML = `
+                <div class="d-flex flex-column align-items-center justify-content-center h-100 text-muted text-xs p-3 text-center">
+                    <i data-lucide="trending-up" class="mb-2 opacity-50" style="width:28px;height:28px;"></i>
+                    <span class="fw-semibold">No Prioritized Suspect Causes</span>
+                    <span class="text-xxs text-secondary mt-1">Score and rank suspect causes in Stage 3 to generate the Pareto distribution.</span>
+                </div>`;
+            if (window.lucide) lucide.createIcons();
         }
 
         // 4. Fishbone Diagram Visual Drawings (Pre vs Post Verification)

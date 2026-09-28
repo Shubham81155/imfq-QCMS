@@ -446,6 +446,98 @@ def generate_evidence_collage_html(project_id, d2, d6, d7=None):
     </div>
     '''
 
+def generate_pareto_svg(d2, d3):
+    items = []
+    dc = d2.get('data_collection') or {}
+    obs = dc.get('observations') or d2.get('observations') or []
+    if isinstance(obs, list):
+        counts = {}
+        for o in obs:
+            if isinstance(o, dict):
+                cat = str(o.get('category') or o.get('defect') or '').strip()
+                try:
+                    val = float(o.get('value') or o.get('count') or 0)
+                except (ValueError, TypeError):
+                    val = 0
+                if cat and 'OctaQube' not in cat and val > 0:
+                    counts[cat] = counts.get(cat, 0) + val
+        if counts:
+            items = sorted(counts.items(), key=lambda x: x[1], reverse=True)[:5]
+    
+    if not items:
+        prior = d3.get('cause_prioritization') or []
+        if isinstance(prior, list):
+            counts = {}
+            for p in prior:
+                if isinstance(p, dict):
+                    cat = str(p.get('cause') or '').strip()
+                    try:
+                        val = float(p.get('total') or p.get('score') or 0)
+                    except (ValueError, TypeError):
+                        val = 0
+                    if cat and 'OctaQube' not in cat and val > 0:
+                        counts[cat] = counts.get(cat, 0) + val
+            if counts:
+                items = sorted(counts.items(), key=lambda x: x[1], reverse=True)[:5]
+
+    if not items:
+        return '''
+        <div class="chart-container" style="height: 95px; display: flex; align-items: center; justify-content: center; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 4px;">
+          <div style="text-align: center; color: #94a3b8; font-size: 7pt; font-style: italic;">
+            <div style="font-weight: 600; color: #64748b; margin-bottom: 2px;">No Defect Frequency Data</div>
+            <span>No stratified frequency observations recorded</span>
+          </div>
+        </div>
+        '''
+
+    total = sum(v for _, v in items)
+    max_val = max(v for _, v in items) if items else 1
+    if max_val == 0:
+        max_val = 1
+
+    num_bars = len(items)
+    bar_width = min(28, int(150 / max(num_bars, 1)))
+    gap = 8
+    start_x = 35
+
+    bars_svg = []
+    points = []
+    cum = 0
+    colors = ["#2563eb", "#3b82f6", "#60a5fa", "#93c5fd", "#bfdbfe"]
+
+    for i, (cat, val) in enumerate(items):
+        cum += val
+        cum_perc = (cum / total * 100) if total > 0 else 0
+        bar_h = int((val / max_val) * 48)
+        bar_y = 65 - bar_h
+        bar_x = start_x + i * (bar_width + gap)
+        color = colors[i % len(colors)]
+        label = html.escape(cat[:8] + ('..' if len(cat) > 8 else ''))
+        
+        bars_svg.append(f'<rect x="{bar_x}" y="{bar_y}" width="{bar_width}" height="{bar_h}" fill="{color}" rx="1"/>')
+        bars_svg.append(f'<text x="{bar_x + bar_width//2}" y="76" font-size="6" fill="#475569" text-anchor="middle">{label}</text>')
+        
+        line_x = bar_x + bar_width // 2
+        line_y = int(65 - (cum_perc / 100.0 * 53))
+        points.append((line_x, line_y, cum_perc))
+
+    line_path = "M " + " L ".join(f"{x} {y}" for x, y, _ in points)
+    circles_svg = "".join(f'<circle cx="{x}" cy="{y}" r="2" fill="#ef4444"/>' for x, y, _ in points)
+    last_x, last_y, last_p = points[-1]
+
+    return f'''
+    <div class="chart-container" style="height: 95px;">
+      <svg width="250" height="85" viewBox="0 0 250 85">
+        <line x1="25" y1="10" x2="25" y2="65" stroke="#94a3b8" stroke-width="1"/>
+        <line x1="25" y1="65" x2="235" y2="65" stroke="#94a3b8" stroke-width="1"/>
+        {''.join(bars_svg)}
+        <path d="{line_path}" fill="none" stroke="#ef4444" stroke-width="1.5"/>
+        {circles_svg}
+        <text x="215" y="{max(12, min(70, last_y))}" font-size="6" fill="#ef4444" font-weight="bold">{int(last_p)}%</text>
+      </svg>
+    </div>
+    '''
+
 def build_qc_story_html(project_id):
     project = Project.query.get(project_id)
     if not project:
@@ -495,7 +587,12 @@ def build_qc_story_html(project_id):
         if val is None and obj is not None:
             attr = path.split('.')[-1]
             val = getattr(obj, attr, None)
-        return str(val) if val is not None and str(val).strip() else fallback
+        if val is not None:
+            s_val = str(val).strip()
+            if "OctaQube" in s_val or "{OctaQube" in s_val:
+                return fallback
+            return s_val if s_val else fallback
+        return fallback
 
     # Meta Variables & Document Identity Branding Context
     from app.domain.services.document_branding_service import DocumentBrandingService
@@ -543,51 +640,49 @@ def build_qc_story_html(project_id):
     format_ref = "QMS-S8-001"
 
     project_title = get_v(s1, d1, "theme_target_schedule.improvement_theme")
-    if project_title == "--": project_title = project.title or "Weld Quality Warriors"
+    if project_title == "--": project_title = project.title or "--"
 
     team_name = get_v(s1, d1, "init.circle_name")
-    if team_name == "--": team_name = f"{project.department.name if project.department else 'Quality'} QC Circle"
+    if team_name == "--": team_name = f"{project.department.name if project.department else 'Quality'} QC Circle" if project.department else "--"
 
-    plant_line = f"{project.plant or 'Plant 1'} / {get_v(s1, d1, 'background_5w2h.where')}"
+    plant_where = get_v(s1, d1, 'background_5w2h.where')
+    plant_line = f"{project.plant or '--'} / {plant_where}" if plant_where != "--" else (project.plant or "--")
     part_process = get_v(s1, d1, "background_5w2h.what")
-    if part_process == "--": part_process = project.department.name if project.department else "Assembly Process"
+    if part_process == "--": part_process = project.department.name if project.department else "--"
 
     meeting_count = get_v(s3, d3, "brainstorming.notes")
-    if meeting_count == "--": meeting_count = "8 Meetings (95% Attd.)"
+    if meeting_count == "--": meeting_count = "--"
 
-    team_leader = project.team_leader.full_name if (project.team_leader and project.team_leader.full_name) else (project.team_leader.username if project.team_leader else "Rajesh Kumar")
-    facilitator = project.facilitator.full_name if (project.facilitator and project.facilitator.full_name) else "Quality Facilitator"
+    team_leader = project.team_leader.full_name if (project.team_leader and project.team_leader.full_name) else (project.team_leader.username if project.team_leader else "--")
+    facilitator = project.facilitator.full_name if (project.facilitator and project.facilitator.full_name) else (project.facilitator.username if project.facilitator else "--")
     
     m_list = [m.full_name or m.username for m in (project.members or [])]
-    members_str = ", ".join(m_list) if m_list else "Ramesh P., Vikram S., Anita M., Suresh K."
+    members_str = ", ".join(m_list) if m_list else "--"
 
     # Section 1
     selected_theme = project_title
     rationale_text = get_v(s1, d1, "theme_target_schedule.expected_benefit")
-    if rationale_text == "--": rationale_text = "High defect rate directly impacting assembly yield & customer satisfaction."
-    alt_theme = "Minor surface scratch reduction on secondary panel"
+    if rationale_text == "--": rationale_text = project.description or "--"
+    alt_theme = "--"
 
     # Section 2
     prob_desc = get_v(s1, d1, "background_5w2h.problem_definition")
-    if prob_desc == "--": prob_desc = project.description or "Automated robotic arm welding parameters causing intermittent crimping fluctuations."
+    if prob_desc == "--": prob_desc = project.description or "--"
     
     curr_kpi = get_v(s1, d1, "current_performance.current_kpi")
-    if curr_kpi == "--": curr_kpi = "12.5% Defect Rate"
-    
     target_kpi = get_v(s1, d1, "theme_target_schedule.target_kpi")
-    if target_kpi == "--": target_kpi = "0.5% Defect Rate"
 
-    target_date = project.end_date.strftime('%d-%b-%Y') if project.end_date else "31-Dec-2026"
+    target_date = project.end_date.strftime('%d-%b-%Y') if project.end_date else "--"
 
     # Section 3
     pareto_obs = get_v(s2, d2, "data_collection.trend")
-    if pareto_obs == "--": pareto_obs = "Top 80% of defects concentrated in crimping pressure fluctuation (45%) and die wear alignment (30%)."
+    if pareto_obs == "--": pareto_obs = "No defect observation trend recorded in Stage 2."
 
     # Section 4 - Fishbone
-    man_cause = "Op training / Overdue PM"
-    machine_cause = "Die wear / Pressure drop"
-    method_cause = "SOP deviation / Speed"
-    material_cause = "Raw hardness variance"
+    man_cause = "--"
+    machine_cause = "--"
+    method_cause = "--"
+    material_cause = "--"
 
     fb_l1 = d3.get('fishbone_l1') or []
     for item in fb_l1:
@@ -602,81 +697,56 @@ def build_qc_story_html(project_id):
     why_chain = d4.get('why_why_analysis') or []
     why_rows_html = ""
     if why_chain and isinstance(why_chain, list):
-        for idx, item in enumerate(why_chain[:1]): # First root cause chain
-            cat = item.get('category') or 'Machine / Method'
-            why1 = item.get('why1') or 'High crimping pressure fluctuation during cycle'
-            why2 = item.get('why2') or 'Pneumatic valve response lag'
-            why3 = item.get('why3') or 'Air filter clogging due to oil contamination'
-            why4 = item.get('why4') or 'PM schedule missed for air filter replacement'
-            why5 = item.get('why5') or 'Lack of automated PM alert trigger in QMS'
-            val = item.get('verification') or 'Review maintenance log & pressure sensor data'
+        for idx, item in enumerate(why_chain[:2]):
+            cat = item.get('category') or f'Root Cause {idx+1}'
+            why1 = item.get('why1') or '--'
+            why2 = item.get('why2') or '--'
+            why3 = item.get('why3') or '--'
+            why4 = item.get('why4') or '--'
+            why5 = item.get('why5') or '--'
+            val = item.get('verification') or '--'
 
-            why_rows_html = f'''
-            <tr>
-              <td rowspan="5"><b>{html.escape(cat)}</b><br><span style="font-size: 6.5pt; color: #64748b;">(Primary Root Cause)</span></td>
-              <td><b>Why 1</b></td>
-              <td>{html.escape(why1)}</td>
-              <td>Pressure log review</td>
-              <td>☑ YES &nbsp; ☐ NO</td>
-            </tr>
-            <tr>
-              <td><b>Why 2</b></td>
-              <td>{html.escape(why2)}</td>
-              <td>Valve bench test</td>
-              <td>☑ YES &nbsp; ☐ NO</td>
-            </tr>
-            <tr>
-              <td><b>Why 3</b></td>
-              <td>{html.escape(why3)}</td>
-              <td>Visual inspection</td>
-              <td>☑ YES &nbsp; ☐ NO</td>
-            </tr>
-            <tr>
-              <td><b>Why 4</b></td>
-              <td>{html.escape(why4)}</td>
-              <td>PM log audit</td>
-              <td>☑ YES &nbsp; ☐ NO</td>
-            </tr>
-            <tr style="background-color: #fef3c7;">
-              <td><b>Why 5</b></td>
-              <td><b>{html.escape(why5)}</b></td>
-              <td>{html.escape(val)}</td>
-              <td style="font-weight: bold; color: #16a34a;">ROOT CAUSE</td>
-            </tr>
-            '''
+            if any(w != '--' for w in [why1, why2, why3, why4, why5]):
+                why_rows_html += f'''
+                <tr>
+                  <td rowspan="5"><b>{html.escape(cat)}</b><br><span style="font-size: 6.5pt; color: #64748b;">(Root Cause {idx+1})</span></td>
+                  <td><b>Why 1</b></td>
+                  <td>{html.escape(why1)}</td>
+                  <td>--</td>
+                  <td>{'☑ YES' if why1 != '--' else '☐ NO'}</td>
+                </tr>
+                <tr>
+                  <td><b>Why 2</b></td>
+                  <td>{html.escape(why2)}</td>
+                  <td>--</td>
+                  <td>{'☑ YES' if why2 != '--' else '☐ NO'}</td>
+                </tr>
+                <tr>
+                  <td><b>Why 3</b></td>
+                  <td>{html.escape(why3)}</td>
+                  <td>--</td>
+                  <td>{'☑ YES' if why3 != '--' else '☐ NO'}</td>
+                </tr>
+                <tr>
+                  <td><b>Why 4</b></td>
+                  <td>{html.escape(why4)}</td>
+                  <td>--</td>
+                  <td>{'☑ YES' if why4 != '--' else '☐ NO'}</td>
+                </tr>
+                <tr style="background-color: #fef3c7;">
+                  <td><b>Why 5</b></td>
+                  <td><b>{html.escape(why5)}</b></td>
+                  <td>{html.escape(val)}</td>
+                  <td style="font-weight: bold; color: #16a34a;">ROOT CAUSE</td>
+                </tr>
+                '''
 
     if not why_rows_html:
         why_rows_html = '''
         <tr>
-          <td rowspan="5"><b>Machine / Pneumatics</b><br><span style="font-size: 6.5pt; color: #64748b;">(Primary Root Cause)</span></td>
-          <td><b>Why 1</b></td>
-          <td>Crimping pressure fluctuations during high-speed cycle</td>
-          <td>Pressure log review</td>
-          <td>☑ YES &nbsp; ☐ NO</td>
-        </tr>
-        <tr>
-          <td><b>Why 2</b></td>
-          <td>Pneumatic valve response lag under load</td>
-          <td>Valve bench test</td>
-          <td>☑ YES &nbsp; ☐ NO</td>
-        </tr>
-        <tr>
-          <td><b>Why 3</b></td>
-          <td>Air filter clogging due to oil contamination</td>
-          <td>Visual inspection</td>
-          <td>☑ YES &nbsp; ☐ NO</td>
-        </tr>
-        <tr>
-          <td><b>Why 4</b></td>
-          <td>PM schedule overdue by 2 weeks</td>
-          <td>PM log audit</td>
-          <td>☑ YES &nbsp; ☐ NO</td>
-        </tr>
-        <tr style="background-color: #fef3c7;">
-          <td><b>Why 5</b></td>
-          <td><b>Lack of automated PM alert trigger in shop floor QMS</b></td>
-          <td>Root cause confirmed via maintenance log audit</td>
-          <td style="font-weight: bold; color: #16a34a;">ROOT CAUSE</td>
+          <td colspan="5" style="text-align: center; color: #94a3b8; font-style: italic; padding: 12px;">
+            No 5-Why root cause analysis recorded for this project yet.
+          </td>
         </tr>
         '''
 
@@ -684,52 +754,109 @@ def build_qc_story_html(project_id):
     action_plan = d5.get('root_cause_mapping') or d5.get('action_plan') or []
     cm_rows_html = ""
     if action_plan and isinstance(action_plan, list):
-        for idx, act in enumerate(action_plan[:3]):
+        for idx, act in enumerate(action_plan[:4]):
             rc = act.get('root_cause') or act.get('cause') or f"Root Cause {idx+1}"
-            cm = act.get('proposed_solution') or act.get('action') or "Implement automated pressure sensor alert & replacement SOP."
-            tr = act.get('trial_result') or act.get('result') or "0 defects observed across 500 trial units."
-            cm_rows_html += f'''
-            <tr>
-              <td>{idx+1}</td>
-              <td><b>{html.escape(rc)}</b></td>
-              <td>{html.escape(cm)}</td>
-              <td>{html.escape(tr)}</td>
-            </tr>
-            '''
+            cm = act.get('proposed_solution') or act.get('action') or "--"
+            tr = act.get('trial_result') or act.get('result') or "--"
+            if rc != f"Root Cause {idx+1}" or cm != "--" or tr != "--":
+                cm_rows_html += f'''
+                <tr>
+                  <td>{idx+1}</td>
+                  <td><b>{html.escape(rc)}</b></td>
+                  <td>{html.escape(cm)}</td>
+                  <td>{html.escape(tr)}</td>
+                </tr>
+                '''
     if not cm_rows_html:
         cm_rows_html = '''
         <tr>
-          <td>1</td>
-          <td><b>Lack of automated PM alert trigger</b></td>
-          <td>Install digital pressure sensor & configure automatic QMS alert on threshold drop.</td>
-          <td>Zero pressure drops & zero defects in 1,000 trial cycles.</td>
-        </tr>
-        <tr>
-          <td>2</td>
-          <td><b>Die wear alignment variation</b></td>
-          <td>Recalibrate die seating fixture and update operator TSOS instruction sheet.</td>
-          <td>Cpk improved from 0.85 to 1.67.</td>
+          <td colspan="4" style="text-align: center; color: #94a3b8; font-style: italic; padding: 12px;">
+            No countermeasures or action plan recorded for this project yet.
+          </td>
         </tr>
         '''
 
     # Section 6 - ROI Verification
     roi = d7.get('roi_validation') or {}
-    inv_cost = f"INR {float(roi.get('investment') or 150000):,.2f}"
-    ann_savings = f"INR {float(roi.get('annual_savings') or 1240000):,.2f} / Year"
-    payback = str(roi.get('payback_months') or "1.5 Months")
-    calc_basis = get_v(s7, d7, "roi_validation.formula")
-    if calc_basis == "--": calc_basis = "Formula: (Annual Defect Vol Reduced × Unit Scrap Cost) - Operating Maintenance Costs"
+    raw_inv = roi.get('investment')
+    raw_sav = roi.get('annual_savings')
+    inv_cost = f"INR {float(raw_inv):,.2f}" if (raw_inv is not None and str(raw_inv).strip() != "") else "--"
+    ann_savings = f"INR {float(raw_sav):,.2f} / Year" if (raw_sav is not None and str(raw_sav).strip() != "") else "--"
+    payback = str(roi.get('payback_months')) if roi.get('payback_months') else "--"
+    calc_basis = get_v(s7, d7, "roi_validation.formula", fallback="--")
 
     # Section 7 - Standardization
-    sop_ref = get_v(s8, d8, "sop_standardization.sop_title")
-    if sop_ref == "--": sop_ref = "SOP-WLD-2026-v2.1"
+    sop_ref = get_v(s8, d8, "sop_standardization.sop_title", fallback="--")
 
     # Section 8 - Reflection
-    reflection_text = get_v(s8, d8, "reflection.notes")
-    if reflection_text == "--": reflection_text = "Cross-functional 5-Why analysis prevented early false assumptions regarding operator skill."
+    reflection_text = get_v(s8, d8, "reflection.notes", fallback="--")
+    next_theme = get_v(s8, d8, "next_theme", fallback="--")
+
+    before_kpi_text = f"{curr_kpi} (Before)" if curr_kpi != "--" else "Before (Baseline)"
+    after_kpi_text = f"{target_kpi} (After)" if target_kpi != "--" else "After (Achieved)"
+
+    pareto_svg_html = generate_pareto_svg(d2, d3)
+
+    sig_rows = []
+    dept_name = project.department.name if project.department else "--"
     
-    next_theme = get_v(s8, d8, "next_theme")
-    if next_theme == "--": next_theme = "Horizontal deployment to Line 2 robotic cell and automated feeder calibration."
+    # Leader
+    sig_rows.append(f'''
+      <tr>
+        <td><b>Team Leader</b></td>
+        <td>{html.escape(team_leader)}</td>
+        <td>{html.escape(dept_name)}</td>
+        <td style="color: {'#059669' if team_leader != '--' else '#94a3b8'}; font-weight: bold;">{'[DIGITALLY SIGNED]' if team_leader != '--' else '[PENDING]'}</td>
+        <td>{target_date}</td>
+      </tr>
+    ''')
+
+    # Facilitator
+    sig_rows.append(f'''
+      <tr>
+        <td><b>QCC Facilitator</b></td>
+        <td>{html.escape(facilitator)}</td>
+        <td>{html.escape(dept_name if facilitator != '--' else '--')}</td>
+        <td style="color: {'#059669' if facilitator != '--' else '#94a3b8'}; font-weight: bold;">{'[APPROVED]' if facilitator != '--' else '[PENDING]'}</td>
+        <td>{target_date}</td>
+      </tr>
+    ''')
+
+    # Reviewer
+    rev_user = getattr(project, 'reviewer', None)
+    rev_name = (rev_user.full_name or rev_user.username) if rev_user else "--"
+    sig_rows.append(f'''
+      <tr>
+        <td><b>Reviewer</b></td>
+        <td>{html.escape(rev_name)}</td>
+        <td>Quality Management</td>
+        <td style="color: {'#059669' if rev_name != '--' else '#94a3b8'}; font-weight: bold;">{'[VERIFIED]' if rev_name != '--' else '[PENDING]'}</td>
+        <td>{target_date}</td>
+      </tr>
+    ''')
+
+    # Members
+    if project.members:
+        for idx, m in enumerate(project.members[:3]):
+            m_name = m.full_name or m.username or f"Member {idx+1}"
+            m_dept = m.department.name if (hasattr(m, 'department') and m.department) else dept_name
+            sig_rows.append(f'''
+              <tr>
+                <td><b>Team Member {idx+1}</b></td>
+                <td>{html.escape(m_name)}</td>
+                <td>{html.escape(m_dept)}</td>
+                <td style="color: #059669;">[SIGNED]</td>
+                <td>{target_date}</td>
+              </tr>
+            ''')
+    else:
+        sig_rows.append(f'''
+          <tr>
+            <td><b>Team Members</b></td>
+            <td colspan="4" style="color: #94a3b8; font-style: italic;">No additional team members assigned</td>
+          </tr>
+        ''')
+    signatures_html = "".join(sig_rows)
 
     evidence_collage_html = generate_evidence_collage_html(project_id, d2, d6, d7)
 
@@ -1036,33 +1163,7 @@ def build_qc_story_html(project_id):
         </table>
 
         <!-- SVG Pareto Visual Chart -->
-        <div class="chart-container" style="height: 95px;">
-          <svg width="250" height="85" viewBox="0 0 250 85">
-            <line x1="25" y1="10" x2="25" y2="65" stroke="#94a3b8" stroke-width="1"/>
-            <line x1="25" y1="65" x2="235" y2="65" stroke="#94a3b8" stroke-width="1"/>
-            
-            <!-- Bars -->
-            <rect x="35" y="20" width="30" height="45" fill="#2563eb"/>
-            <rect x="80" y="35" width="30" height="30" fill="#3b82f6"/>
-            <rect x="125" y="50" width="30" height="15" fill="#60a5fa"/>
-            <rect x="170" y="58" width="30" height="7" fill="#93c5fd"/>
-            
-            <!-- Labels -->
-            <text x="36" y="76" font-size="6.5" fill="#475569">Pressure</text>
-            <text x="83" y="76" font-size="6.5" fill="#475569">Die Wear</text>
-            <text x="129" y="76" font-size="6.5" fill="#475569">Speed</text>
-            <text x="175" y="76" font-size="6.5" fill="#475569">Other</text>
-            
-            <!-- Line -->
-            <path d="M 50 20 L 95 12 L 140 8 L 185 5" fill="none" stroke="#ef4444" stroke-width="1.5"/>
-            <circle cx="50" cy="20" r="2" fill="#ef4444"/>
-            <circle cx="95" cy="12" r="2" fill="#ef4444"/>
-            <circle cx="140" cy="8" r="2" fill="#ef4444"/>
-            <circle cx="185" cy="5" r="2" fill="#ef4444"/>
-            
-            <text x="195" y="10" font-size="6" fill="#ef4444" font-weight="bold">80%</text>
-          </svg>
-        </div>
+        {pareto_svg_html}
       </div>
 
       <!-- SECTION 4 -->
@@ -1165,8 +1266,8 @@ def build_qc_story_html(project_id):
             <circle cx="115" cy="18" r="2.5" fill="#ef4444"/>
             <circle cx="155" cy="40" r="2.5" fill="#10b981"/>
             <circle cx="195" cy="42" r="2.5" fill="#10b981"/>
-            <text x="40" y="12" font-size="6" fill="#ef4444">12.5% (Before)</text>
-            <text x="160" y="38" font-size="6" fill="#10b981">0.5% (After)</text>
+            <text x="40" y="12" font-size="6" fill="#ef4444">{html.escape(before_kpi_text)}</text>
+            <text x="160" y="38" font-size="6" fill="#10b981">{html.escape(after_kpi_text)}</text>
           </svg>
         </div>
 
@@ -1278,41 +1379,7 @@ def build_qc_story_html(project_id):
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <td><b>Team Leader</b></td>
-              <td>{html.escape(team_leader)}</td>
-              <td>{html.escape(project.department.name if project.department else "Manufacturing")}</td>
-              <td style="color: #059669; font-weight: bold;">[DIGITALLY SIGNED]</td>
-              <td>{target_date}</td>
-            </tr>
-            <tr>
-              <td><b>QCC Facilitator</b></td>
-              <td>{html.escape(facilitator)}</td>
-              <td>Quality Assurance</td>
-              <td style="color: #059669; font-weight: bold;">[APPROVED]</td>
-              <td>{target_date}</td>
-            </tr>
-            <tr>
-              <td><b>Reviewer</b></td>
-              <td>Plant Quality Head</td>
-              <td>Quality Management</td>
-              <td style="color: #059669; font-weight: bold;">[VERIFIED]</td>
-              <td>{target_date}</td>
-            </tr>
-            <tr>
-              <td><b>Team Member 1</b></td>
-              <td>Ramesh P.</td>
-              <td>Operations</td>
-              <td style="color: #475569;">[SIGNED]</td>
-              <td>{target_date}</td>
-            </tr>
-            <tr>
-              <td><b>Team Member 2</b></td>
-              <td>Vikram S.</td>
-              <td>Maintenance</td>
-              <td style="color: #475569;">[SIGNED]</td>
-              <td>{target_date}</td>
-            </tr>
+{signatures_html}
           </tbody>
         </table>
       </div>

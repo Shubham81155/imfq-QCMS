@@ -128,6 +128,76 @@ def test_maintenance_mode_status(client, app):
             db.session.commit()
 
 
+def test_organization_maintenance_mode(client, auth_context, app):
+    from flask_jwt_extended import create_access_token
+    org_id = auth_context['org_id']
+    admin_headers = auth_context['headers']
+
+    # 1. Turn on organization maintenance mode via admin settings endpoint
+    res = client.put('/api/admin/org-settings', headers=admin_headers, json={'maintenance_mode': True})
+    assert res.status_code == 200
+
+    try:
+        # Create a team member in this organization
+        with app.app_context():
+            tm_role = Role.query.filter_by(name='Team Member').first()
+            if not tm_role:
+                tm_role = Role(name='Team Member', description='Team Member')
+                db.session.add(tm_role)
+                db.session.commit()
+            uid = uuid.uuid4().hex[:6]
+            tm_user = User(
+                email=f"tm_{uid}@pytest.org",
+                username=f"tm_{uid}",
+                full_name="Pytest Team Member",
+                org_id=org_id,
+                role_id=tm_role.id,
+                is_active=True,
+                is_verified=True,
+                status="Active"
+            )
+            tm_user.set_password("MemberPass123!")
+            db.session.add(tm_user)
+            db.session.commit()
+            tm_id = tm_user.id
+            tm_username = tm_user.username
+
+        tm_token = create_access_token(identity=str(tm_id))
+        tm_headers = {'Authorization': f'Bearer {tm_token}', 'Content-Type': 'application/json'}
+
+        # 2. Check /api/auth/maintenance-status for Team Member: maintenance_mode is True, is_exempt is False
+        res = client.get('/api/auth/maintenance-status', headers=tm_headers)
+        assert res.status_code == 200
+        data = res.get_json()
+        assert data['maintenance_mode'] is True
+        assert data['scope'] == 'organization'
+        assert data['is_exempt'] is False
+
+        # 3. Check /api/auth/maintenance-status for Admin: maintenance_mode is True, is_exempt is True
+        res = client.get('/api/auth/maintenance-status', headers=admin_headers)
+        assert res.status_code == 200
+        data = res.get_json()
+        assert data['maintenance_mode'] is True
+        assert data['scope'] == 'organization'
+        assert data['is_exempt'] is True
+
+        # 4. Team Member calls protected API during maintenance: receives 503 MAINTENANCE_MODE
+        res = client.get('/api/projects', headers=tm_headers)
+        assert res.status_code == 503
+        data = res.get_json()
+        assert data['code'] == 'MAINTENANCE_MODE'
+
+        # 5. Team Member tries to log in during maintenance: receives 403 MAINTENANCE_MODE
+        res = client.post('/api/auth/login', json={'identifier': tm_username, 'password': "MemberPass123!"})
+        assert res.status_code == 403
+        data = res.get_json()
+        assert data['code'] == 'MAINTENANCE_MODE'
+
+    finally:
+        # Reset organization maintenance mode
+        client.put('/api/admin/org-settings', headers=admin_headers, json={'maintenance_mode': False})
+
+
 def test_realtime_alerts(client, super_admin_context, app):
     uid = uuid.uuid4().hex[:6]
     with app.app_context():

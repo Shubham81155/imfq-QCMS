@@ -362,6 +362,13 @@
                 }
             },
 
+                        cleanVal(v) {
+                if (!v) return '--';
+                const s = String(v).trim();
+                if (!s || s.includes('OctaQube') || s.startsWith('{OctaQube')) return '--';
+                return (window.OctaQube && OctaQube.escapeHtml) ? OctaQube.escapeHtml(s) : s;
+            },
+
             renderStageHTML(stageId, data) {
                 if (!data || Object.keys(data).length === 0) {
                     return '<div class="text-secondary italic text-xs py-2">No data recorded for this stage.</div>';
@@ -461,6 +468,10 @@
                             ? data.cause_register
                             : ((data.fishbone_l1 && data.fishbone_l1.length > 0) ? data.fishbone_l1 : (data.fishbone_l2 || []));
                         const verList = data.cause_verification || [];
+                        const validReg = (rawReg || []).filter(r => {
+                            const c = r.cause || r.description || r.level1 || r.level2 || '';
+                            return c && !c.includes('OctaQube');
+                        });
 
                         return `
                             <div class="text-xs">
@@ -473,19 +484,19 @@
                                 </div>
 
                                 <h6 class="text-xxs fw-bold uppercase text-primary border-bottom pb-1 mb-2">Cause Register</h6>
-                                ${rawReg.length > 0 ? `
+                                ${validReg.length > 0 ? `
                                     <div class="table-responsive">
                                         <table class="table table-sm table-bordered text-xs bg-white mb-0 text-dark">
                                             <thead>
                                                 <tr class="bg-light"><th>Category</th><th>Identified Cause</th><th>Verification Method</th></tr>
                                             </thead>
                                             <tbody>
-                                                ${rawReg.map(r => {
+                                                ${validReg.map(r => {
                                                     const category = r.category || '--';
                                                     const causeText = r.cause || r.description || r.level1 || r.level2 || '--';
                                                     const verMatch = verList.find(v => v.cause && (causeText.includes(v.cause) || v.cause.includes(causeText))) || {};
                                                     const methodText = r.verification_method || r.method || verMatch.method || verMatch.verification_method || r.origin || '--';
-                                                    return `<tr><td>${category}</td><td>${causeText}</td><td>${methodText}</td></tr>`;
+                                                    return `<tr><td>${OctaQube.escapeHtml(category)}</td><td>${OctaQube.escapeHtml(causeText)}</td><td>${OctaQube.escapeHtml(methodText)}</td></tr>`;
                                                 }).join('')}
                                             </tbody>
                                         </table>
@@ -508,13 +519,13 @@
                                             </thead>
                                             <tbody>
                                                 ${why.map(r => `<tr>
-                                                    <td>${r.problem || '--'}</td>
-                                                    <td>${r.why1 || '--'}</td>
-                                                    <td>${r.why2 || '--'}</td>
-                                                    <td>${r.why3 || '--'}</td>
-                                                    <td>${r.why4 || '--'}</td>
-                                                    <td>${r.why5 || '--'}</td>
-                                                    <td>${r.root_cause || '--'}</td>
+                                                    <td>${this.cleanVal(r.problem)}</td>
+                                                    <td>${this.cleanVal(r.why1)}</td>
+                                                    <td>${this.cleanVal(r.why2)}</td>
+                                                    <td>${this.cleanVal(r.why3)}</td>
+                                                    <td>${this.cleanVal(r.why4)}</td>
+                                                    <td>${this.cleanVal(r.why5)}</td>
+                                                    <td>${this.cleanVal(r.root_cause)}</td>
                                                 </tr>`).join('')}
                                             </tbody>
                                         </table>
@@ -529,7 +540,7 @@
                                                 <tr class="bg-light"><th>ID</th><th>Confirmed Root Cause</th><th>Source of Evidence</th></tr>
                                             </thead>
                                             <tbody>
-                                                ${reg.map(r => `<tr><td>${r.id || '--'}</td><td>${r.root_cause || '--'}</td><td>${r.source || '--'}</td></tr>`).join('')}
+                                                ${reg.map(r => `<tr><td>${this.cleanVal(r.id)}</td><td>${this.cleanVal(r.root_cause)}</td><td>${this.cleanVal(r.source)}</td></tr>`).join('')}
                                             </tbody>
                                         </table>
                                     </div>
@@ -551,7 +562,7 @@
                                                 <tr class="bg-light"><th>Root Cause</th><th>Proposed Permanent Solution</th></tr>
                                             </thead>
                                             <tbody>
-                                                ${map.map(r => `<tr><td>${r.root_cause || '--'}</td><td>${r.proposed_solution || '--'}</td></tr>`).join('')}
+                                                ${map.map(r => `<tr><td>${this.cleanVal(r.root_cause)}</td><td>${this.cleanVal(r.proposed_solution)}</td></tr>`).join('')}
                                             </tbody>
                                         </table>
                                     </div>

@@ -1103,7 +1103,17 @@ const Stage3 = {
             return desc;
         }).filter(Boolean);
 
-        if (causeList.length === 0) return;
+        if (causeList.length === 0) {
+            const prioContainer = document.getElementById('s3_priorityContainer');
+            if (prioContainer && (!initialPrio || initialPrio.length === 0)) {
+                prioContainer.innerHTML = '<div class="text-xs text-muted fst-italic p-2">Add entries to Cause Register above to score and rank causes.</div>';
+            }
+            const verContainer = document.getElementById('s3_verificationContainer');
+            if (verContainer && (!initialVer || initialVer.length === 0)) {
+                verContainer.innerHTML = '<div class="text-xs text-muted fst-italic p-2">Add entries to Cause Register above to establish verification plans.</div>';
+            }
+            return;
+        }
 
         // 1. Sync Prioritization Matrix
         const prioContainer = document.getElementById('s3_priorityContainer');
@@ -1180,11 +1190,17 @@ const Stage3 = {
         const c = document.getElementById('s3_registerContainer');
         const r = document.createElement('div');
         r.className = 'row g-2 mb-2 align-items-center dyn-row';
+        const cleanStr = (s) => (s && typeof s === 'string' && !s.includes('OctaQube')) ? s : '';
+        const idVal = cleanStr(data.id);
+        const catVal = cleanStr(data.category);
+        const descVal = cleanStr(data.description);
+        const origVal = cleanStr(data.origin);
+
         r.innerHTML = `
-            <div class="col-2"><input type="text" class="ds-input r-id" placeholder="e.g. RC-1" value="{OctaQube.escapeHtml(data.id || '')}" oninput="StageModules[3].syncPrioritizationAndVerificationFromRegister()" required></div>
-            <div class="col-2"><input type="text" class="ds-input r-cat" placeholder="e.g. Machine" value="{OctaQube.escapeHtml(data.category || '')}" oninput="StageModules[3].syncPrioritizationAndVerificationFromRegister()" required></div>
-            <div class="col-4"><input type="text" class="ds-input r-desc" placeholder="e.g. Crimping pressure fluctuation" value="{OctaQube.escapeHtml(data.description || '')}" oninput="StageModules[3].syncPrioritizationAndVerificationFromRegister()" required></div>
-            <div class="col-3"><input type="text" class="ds-input r-orig" placeholder="e.g. Brainstorming" value="{OctaQube.escapeHtml(data.origin || '')}" oninput="StageModules[3].syncPrioritizationAndVerificationFromRegister()" required></div>
+            <div class="col-2"><input type="text" class="ds-input r-id" placeholder="e.g. RC-1" value="${OctaQube.escapeHtml(idVal)}" oninput="StageModules[3].syncPrioritizationAndVerificationFromRegister()" required></div>
+            <div class="col-2"><input type="text" class="ds-input r-cat" placeholder="e.g. Machine" value="${OctaQube.escapeHtml(catVal)}" oninput="StageModules[3].syncPrioritizationAndVerificationFromRegister()" required></div>
+            <div class="col-4"><input type="text" class="ds-input r-desc" placeholder="e.g. Crimping pressure fluctuation" value="${OctaQube.escapeHtml(descVal)}" oninput="StageModules[3].syncPrioritizationAndVerificationFromRegister()" required></div>
+            <div class="col-3"><input type="text" class="ds-input r-orig" placeholder="e.g. Brainstorming" value="${OctaQube.escapeHtml(origVal)}" oninput="StageModules[3].syncPrioritizationAndVerificationFromRegister()" required></div>
             <div class="col-1"><button type="button" class="ds-btn ds-btn-ghost text-danger p-1" onclick="this.closest('.dyn-row').remove(); StageModules[3].syncPrioritizationAndVerificationFromRegister()"><i data-lucide="trash-2" style="width:14px;"></i></button></div>`;
         c.appendChild(r);
         if (window.lucide) lucide.createIcons();
@@ -1193,9 +1209,11 @@ const Stage3 = {
         const container = document.getElementById('s3_registerContainer');
         if (!container) return [];
         return [...container.querySelectorAll('.dyn-row')].map(r => ({
-            id: r.querySelector('.r-id').value, category: r.querySelector('.r-cat').value,
-            description: r.querySelector('.r-desc').value, origin: r.querySelector('.r-orig').value
-        })).filter(x => x.description);
+            id: r.querySelector('.r-id').value.trim(),
+            category: r.querySelector('.r-cat').value.trim(),
+            description: r.querySelector('.r-desc').value.trim(),
+            origin: r.querySelector('.r-orig').value.trim()
+        })).filter(x => x.description && !x.description.includes('OctaQube'));
     },
 
     addPrioritizationRow(data = {}) {
@@ -1203,12 +1221,19 @@ const Stage3 = {
         const r = document.createElement('div');
         r.className = 'row g-2 mb-2 align-items-center dyn-row';
         const calc = "const p=this.closest('.dyn-row'); p.querySelector('.r-tot').value = (parseInt(p.querySelector('.r-imp').value)||0)*(parseInt(p.querySelector('.r-frq').value)||0)*(parseInt(p.querySelector('.r-con').value)||0);";
+        const cleanStr = (s) => (s && typeof s === 'string' && !s.includes('OctaQube')) ? s : '';
+        const causeVal = cleanStr(data.cause);
+        const impVal = cleanStr(data.impact);
+        const frqVal = cleanStr(data.frequency);
+        const conVal = cleanStr(data.control);
+        const totVal = cleanStr(data.total);
+
         r.innerHTML = `
-            <div class="col-3"><input type="text" class="ds-input r-cause" placeholder="e.g. PM overdue by 2 weeks" value="{OctaQube.escapeHtml(data.cause || '')}" required></div>
-            <div class="col-2"><input type="number" class="ds-input r-imp" placeholder="1-10" value="{OctaQube.escapeHtml(data.impact || '')}" onchange="${calc}" required></div>
-            <div class="col-2"><input type="number" class="ds-input r-frq" placeholder="1-10" value="{OctaQube.escapeHtml(data.frequency || '')}" onchange="${calc}" required></div>
-            <div class="col-2"><input type="number" class="ds-input r-con" placeholder="1-10" value="{OctaQube.escapeHtml(data.control || '')}" onchange="${calc}" required></div>
-            <div class="col-2"><input type="number" class="ds-input r-tot" readonly style="background:var(--ds-surface-raised)" value="{OctaQube.escapeHtml(data.total || '')}"></div>
+            <div class="col-3"><input type="text" class="ds-input r-cause" placeholder="e.g. PM overdue by 2 weeks" value="${OctaQube.escapeHtml(causeVal)}" required></div>
+            <div class="col-2"><input type="number" class="ds-input r-imp" placeholder="1-10" value="${OctaQube.escapeHtml(impVal)}" onchange="${calc}" required></div>
+            <div class="col-2"><input type="number" class="ds-input r-frq" placeholder="1-10" value="${OctaQube.escapeHtml(frqVal)}" onchange="${calc}" required></div>
+            <div class="col-2"><input type="number" class="ds-input r-con" placeholder="1-10" value="${OctaQube.escapeHtml(conVal)}" onchange="${calc}" required></div>
+            <div class="col-2"><input type="number" class="ds-input r-tot" readonly style="background:var(--ds-surface-raised)" value="${OctaQube.escapeHtml(totVal)}"></div>
             <div class="col-1"><button class="ds-btn ds-btn-ghost text-danger p-1" onclick="this.closest('.dyn-row').remove()"><i data-lucide="trash-2" style="width:14px;"></i></button></div>`;
         c.appendChild(r);
         if (window.lucide) lucide.createIcons();
@@ -1217,22 +1242,31 @@ const Stage3 = {
         const container = document.getElementById('s3_priorityContainer');
         if (!container) return [];
         return [...container.querySelectorAll('.dyn-row')].map(r => ({
-            cause: r.querySelector('.r-cause').value, impact: r.querySelector('.r-imp').value,
-            frequency: r.querySelector('.r-frq').value, control: r.querySelector('.r-con').value,
-            total: r.querySelector('.r-tot').value
-        })).filter(x => x.cause);
+            cause: r.querySelector('.r-cause').value.trim(),
+            impact: r.querySelector('.r-imp').value.trim(),
+            frequency: r.querySelector('.r-frq').value.trim(),
+            control: r.querySelector('.r-con').value.trim(),
+            total: r.querySelector('.r-tot').value.trim()
+        })).filter(x => x.cause && !x.cause.includes('OctaQube'));
     },
 
     addVerificationRow(data = {}) {
         const c = document.getElementById('s3_verificationContainer');
         const r = document.createElement('div');
         r.className = 'row g-2 mb-2 align-items-center dyn-row';
+        const cleanStr = (s) => (s && typeof s === 'string' && !s.includes('OctaQube')) ? s : '';
+        const causeVal = cleanStr(data.cause);
+        const methVal = cleanStr(data.method);
+        const srcVal = cleanStr(data.source);
+        const resVal = cleanStr(data.result);
+        const concVal = cleanStr(data.conclusion);
+
         r.innerHTML = `
-            <div class="col-2"><input type="text" class="ds-input r-cause" placeholder="e.g. PM overdue by 2 weeks" value="{OctaQube.escapeHtml(data.cause || '')}" required></div>
-            <div class="col-2"><input type="text" class="ds-input r-meth" placeholder="e.g. Review maintenance logs" value="{OctaQube.escapeHtml(data.method || '')}" required></div>
-            <div class="col-3"><input type="text" class="ds-input r-src" placeholder="e.g. Log sheet ML-2025" value="{OctaQube.escapeHtml(data.source || '')}" required></div>
-            <div class="col-2"><input type="text" class="ds-input r-res" placeholder="e.g. Verified PM was missed in Dec" value="{OctaQube.escapeHtml(data.result || '')}" required></div>
-            <div class="col-2"><input type="text" class="ds-input r-conc" placeholder="e.g. Confirmed Root Cause" value="{OctaQube.escapeHtml(data.conclusion || '')}" required></div>
+            <div class="col-2"><input type="text" class="ds-input r-cause" placeholder="e.g. PM overdue by 2 weeks" value="${OctaQube.escapeHtml(causeVal)}" required></div>
+            <div class="col-2"><input type="text" class="ds-input r-meth" placeholder="e.g. Review maintenance logs" value="${OctaQube.escapeHtml(methVal)}" required></div>
+            <div class="col-3"><input type="text" class="ds-input r-src" placeholder="e.g. Log sheet ML-2025" value="${OctaQube.escapeHtml(srcVal)}" required></div>
+            <div class="col-2"><input type="text" class="ds-input r-res" placeholder="e.g. Verified PM was missed in Dec" value="${OctaQube.escapeHtml(resVal)}" required></div>
+            <div class="col-2"><input type="text" class="ds-input r-conc" placeholder="e.g. Confirmed Root Cause" value="${OctaQube.escapeHtml(concVal)}" required></div>
             <div class="col-1"><button class="ds-btn ds-btn-ghost text-danger p-1" onclick="this.closest('.dyn-row').remove()"><i data-lucide="trash-2" style="width:14px;"></i></button></div>`;
         c.appendChild(r);
         if (window.lucide) lucide.createIcons();
@@ -1241,10 +1275,12 @@ const Stage3 = {
         const container = document.getElementById('s3_verificationContainer');
         if (!container) return [];
         return [...container.querySelectorAll('.dyn-row')].map(r => ({
-            cause: r.querySelector('.r-cause').value, method: r.querySelector('.r-meth').value,
-            source: r.querySelector('.r-src').value, result: r.querySelector('.r-res').value,
-            conclusion: r.querySelector('.r-conc').value
-        })).filter(x => x.cause);
+            cause: r.querySelector('.r-cause').value.trim(),
+            method: r.querySelector('.r-meth').value.trim(),
+            source: r.querySelector('.r-src').value.trim(),
+            result: r.querySelector('.r-res').value.trim(),
+            conclusion: r.querySelector('.r-conc').value.trim()
+        })).filter(x => x.cause && !x.cause.includes('OctaQube'));
     },
 
     addFishboneL3Row(data = {}) {

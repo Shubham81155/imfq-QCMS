@@ -791,9 +791,24 @@ def get_strategic_analytics():
                 year -= 1
             months_list.append(datetime(year, month, 1))
 
-        formatted_trend = []
-        moving_average = []
+        # Bulk fetch savings records for the organization to avoid N+1 queries
+        repo_entries = db.session.query(
+            KnowledgeRepository.archived_at,
+            KnowledgeRepository.cost_savings
+        ).filter(
+            KnowledgeRepository.org_id == org_id,
+            KnowledgeRepository.cost_savings.isnot(None)
+        ).all()
 
+        stage8_entries = db.session.query(
+            Stage8Implementation.created_at,
+            Stage8Implementation.cost_savings
+        ).filter(
+            Stage8Implementation.org_id == org_id,
+            Stage8Implementation.cost_savings.isnot(None)
+        ).all()
+
+        formatted_trend = []
         for m_start in months_list:
             if m_start.month == 12:
                 m_end = datetime(m_start.year + 1, 1, 1) - timedelta(seconds=1)
@@ -802,22 +817,8 @@ def get_strategic_analytics():
 
             m_str = m_start.strftime('%b %Y')
 
-            # Real cumulative savings archived in knowledge repository up to m_end
-            repo_savings = db.session.query(
-                func.sum(KnowledgeRepository.cost_savings)
-            ).filter(
-                KnowledgeRepository.org_id == org_id,
-                KnowledgeRepository.archived_at <= m_end
-            ).scalar() or 0.0
-
-            # Real cumulative savings approved in Stage 8 up to m_end
-            stage8_savings = db.session.query(
-                func.sum(Stage8Implementation.cost_savings)
-            ).filter(
-                Stage8Implementation.org_id == org_id,
-                Stage8Implementation.created_at <= m_end
-            ).scalar() or 0.0
-
+            repo_savings = sum(float(r[1] or 0.0) for r in repo_entries if r[0] and r[0] <= m_end)
+            stage8_savings = sum(float(s[1] or 0.0) for s in stage8_entries if s[0] and s[0] <= m_end)
             total_month_savings = float(repo_savings + stage8_savings)
 
             formatted_trend.append({
@@ -827,12 +828,23 @@ def get_strategic_analytics():
 
         # Calculate 3-month moving average of real data
         savings_vals = [d["savings"] for d in formatted_trend]
+        moving_average = []
         for idx in range(len(savings_vals)):
             window = savings_vals[max(0, idx - 2): idx + 1]
             moving_average.append(round(sum(window) / len(window), 2))
 
         # Real projection forecast based on actual trend
         forecast = list(savings_vals)
+        future_months = []
+        if months_list:
+            last_dt = months_list[-1]
+            for f_i in range(1, 3):
+                y = last_dt.year + ((last_dt.month + f_i - 1) // 12)
+                m = ((last_dt.month + f_i - 1) % 12) + 1
+                future_months.append(datetime(y, m, 1).strftime('%b %Y') + ' (Proj)')
+        else:
+            future_months = ['+1 Month (Proj)', '+2 Months (Proj)']
+
         if len(savings_vals) >= 2:
             last_val = savings_vals[-1]
             second_last_val = savings_vals[-2]
@@ -844,6 +856,8 @@ def get_strategic_analytics():
             forecast.append(last_val)
             forecast.append(last_val)
 
+        categories = [d["month"] for d in formatted_trend] + future_months
+
         # 3. Weekly Quality Metrics Trend (real data, last 5 weeks)
         now_dt = datetime.now(timezone.utc).replace(tzinfo=None)
         quality_labels = []
@@ -852,44 +866,42 @@ def get_strategic_analytics():
         cycle_time = []
         complaints_list = []
 
+        window_start = now_dt - timedelta(weeks=5)
+        completed_trackers = db.session.query(
+            ProjectStageTracker.completed_at,
+            ProjectStageTracker.started_at
+        ).filter(
+            ProjectStageTracker.org_id == org_id,
+            ProjectStageTracker.status == 'Completed',
+            ProjectStageTracker.completed_at >= window_start
+        ).all()
+
+        active_projects_all = db.session.query(
+            Project.created_at,
+            Project.status
+        ).filter(
+            Project.org_id == org_id,
+            ~Project.status.in_(['Completed', 'Closed', 'Rejected'])
+        ).all()
+
         for week_offset in range(4, -1, -1):
             week_start = now_dt - timedelta(weeks=week_offset + 1)
             week_end = now_dt - timedelta(weeks=week_offset)
             label = f"W{5 - week_offset} ({week_end.strftime('%d %b')})"
             quality_labels.append(label)
 
-            # Completed stages in this week
-            comp_in_week = db.session.query(func.count(ProjectStageTracker.id)).filter(
-                ProjectStageTracker.org_id == org_id,
-                ProjectStageTracker.status == 'Completed',
-                ProjectStageTracker.completed_at >= week_start,
-                ProjectStageTracker.completed_at < week_end
-            ).scalar() or 0
+            comp_in_week = sum(1 for t in completed_trackers if t[0] and week_start <= t[0] < week_end)
+            active_in_week = sum(1 for p in active_projects_all if p[0] and p[0] <= week_end)
 
-            # Active (In Progress) projects in this week
-            active_in_week = db.session.query(func.count(Project.id)).filter(
-                Project.org_id == org_id,
-                Project.created_at <= week_end,
-                Project.status.notin_(['Completed', 'Closed', 'Rejected'])
-            ).scalar() or 0
-
-            # Quality Index: base 85 + boost from completed stages (capped at 99)
             qi = min(99.0, round(85.0 + comp_in_week * 1.5, 1))
-            # Defect Rate: inverse of quality, base 5 reduced by completions
             dr = max(0.3, round(5.0 - comp_in_week * 0.4, 1))
-            # Cycle time: average completion days for stages in this week
-            avg_days_query = db.session.query(
-                func.avg(
-                    func.extract('epoch', ProjectStageTracker.completed_at - ProjectStageTracker.started_at) / 86400.0
-                )
-            ).filter(
-                ProjectStageTracker.org_id == org_id,
-                ProjectStageTracker.status == 'Completed',
-                ProjectStageTracker.completed_at >= week_start,
-                ProjectStageTracker.completed_at < week_end,
-                ProjectStageTracker.started_at.isnot(None)
-            ).scalar()
-            ct = round(float(avg_days_query), 1) if avg_days_query else round(max(5.0, 14.0 - comp_in_week * 0.8), 1)
+
+            durations = [
+                (t[0] - t[1]).total_seconds() / 86400.0
+                for t in completed_trackers
+                if t[0] and t[1] and week_start <= t[0] < week_end
+            ]
+            ct = round(float(sum(durations) / len(durations)), 1) if durations else round(max(5.0, 14.0 - comp_in_week * 0.8), 1)
 
             quality_index.append(qi)
             defect_rate.append(dr)
@@ -897,6 +909,7 @@ def get_strategic_analytics():
             complaints_list.append(max(0, active_in_week - comp_in_week))
 
         return jsonify({
+            "categories": categories,
             "savings_trend": formatted_trend,
             "moving_average": moving_average,
             "forecast": forecast,
