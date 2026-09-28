@@ -66,8 +66,9 @@ def test_project_governance_and_team_update(client, auth_context, app):
             status="In Progress"
         )
         db.session.add(project)
+        db.session.flush()
+        pid = int(project.id)
         db.session.commit()
-        pid = project.id
 
     payload = {
         "team_leader_id": auth_context['user_id'],

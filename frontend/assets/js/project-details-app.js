@@ -2823,7 +2823,7 @@ const ProjectApp = {
                                 <ol class="text-sm ps-3">
                                     ${(Array.isArray(s8.sop?.steps) ? s8.sop.steps : []).map(s => typeof s === 'string' ? `<li>${s}</li>` : `<li><strong>${s.step_name || 'Step'}:</strong> ${s.description || ''} (Role: ${s.responsible_role || 'All'})</li>`).join('') || '<li class="text-muted">No steps configured</li>'}
                                 </ol>
-                            </div>`
+                            </div>
                         ` : `
                             <div class="p-4 text-center text-muted border rounded">
                                 <i data-lucide="alert-circle" style="width:36px;height:36px;" class="mb-2"></i>
