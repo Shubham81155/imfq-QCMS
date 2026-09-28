@@ -793,6 +793,8 @@ select[class*="ds-input"] {
     background-size: 14px 14px !important;
     padding-right: 2.25rem !important;
     cursor: pointer !important;
+    line-height: normal !important;
+    color-scheme: light;
 }
 
 select:focus,
@@ -809,6 +811,7 @@ select.form-control:focus {
     background-position: right 0.75rem center !important;
     background-size: 14px 14px !important;
     padding-right: 2.25rem !important;
+    outline: none !important;
 }
 
 [data-theme="dark"] select,
@@ -839,6 +842,8 @@ body.dark-mode select.form-select {
     background-color: rgba(15, 23, 42, 0.95) !important;
     color: #f8fafc !important;
     border-color: rgba(255, 255, 255, 0.25) !important;
+    line-height: normal !important;
+    color-scheme: dark;
 }
 
 [data-theme="dark"] select:focus,
@@ -856,6 +861,7 @@ body.dark-mode .ds-select:focus {
     background-color: #0f172a !important;
     border-color: #38bdf8 !important;
     box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.25) !important;
+    outline: none !important;
 }
 
 [data-theme="dark"] select option,
@@ -864,7 +870,6 @@ body.dark-mode .ds-select:focus {
 [data-theme="dark"] .form-select option {
     background-color: #0f172a !important;
     color: #f8fafc !important;
-    padding: 8px 12px !important;
 }
 
 /* ============================================================

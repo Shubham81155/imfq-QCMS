@@ -314,6 +314,12 @@ const api = {
                     }
                 }
 
+                if (response.status === 503 && (data.code === 'MAINTENANCE_MODE' || data.error_code === 'MAINTENANCE_MODE')) {
+                    if (typeof window.showMaintenanceScreen === 'function') {
+                        window.showMaintenanceScreen(data.message);
+                    }
+                }
+
                 if (!response.ok) {
                     const fallbackMsg = (response.status === 401 || response.status === 400 || response.status === 403) ? 'Invalid username or password' : 'Request failed. Please try again.';
                     const error = new Error(data.message || data.msg || data.error || data.detail || fallbackMsg);

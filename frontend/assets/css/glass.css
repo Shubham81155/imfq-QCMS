@@ -1789,21 +1789,20 @@ select.ds-select {
     padding-bottom: 0 !important;
     padding-left: 14px !important;
     padding-right: 36px !important;
-    line-height: 40px !important;
+    line-height: normal !important;
     height: 42px !important;
     font-size: 13.5px !important;
     font-weight: 500 !important;
     color: var(--ds-text-main) !important;
     vertical-align: middle !important;
     cursor: pointer !important;
+    color-scheme: light;
 }
 
 select.ds-input option,
-select.ds-select option {
-    background: #ffffff;
-    color: #0f172a;
-    font-size: 0.9rem;
-    padding: 8px 12px;
+select.ds-select option,
+select option {
+    font-weight: 400 !important;
 }
 
 /* --- Dark Mode Overrides --- */
@@ -1832,9 +1831,14 @@ select.ds-select option {
     border-color: rgba(255, 255, 255, 0.08) !important;
 }
 
+[data-theme="dark"] select.ds-input,
+[data-theme="dark"] select.ds-select {
+    color-scheme: dark;
+}
+
 [data-theme="dark"] select.ds-input option,
 [data-theme="dark"] select.ds-select option {
-    background: #1e293b;
+    background-color: #1e293b;
     color: #f8fafc;
 }
 

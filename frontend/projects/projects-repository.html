@@ -2,14 +2,14 @@
 <html lang="en">
 <head>
     <!-- Performance & Network Acceleration: Critical Preloads -->
-    <link rel="preload" href="/assets/dist/core.3f133274.min.css" as="style">
-    <link rel="preload" href="/assets/dist/auth-guard.2feac510.min.js" as="script">
-    <script src="/assets/dist/auth-guard.2feac510.min.js"></script>
+    <link rel="preload" href="/assets/dist/core.561d4d75.min.css" as="style">
+    <link rel="preload" href="/assets/dist/auth-guard.2d35b3d2.min.js" as="script">
+    <script src="/assets/dist/auth-guard.2d35b3d2.min.js"></script>
 
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Project Repository | OctaQube Enterprise</title>
-    <link rel="stylesheet" href="/assets/dist/core.3f133274.min.css">
+    <link rel="stylesheet" href="/assets/dist/core.561d4d75.min.css">
     <script src="/assets/dist/breadcrumbs.cb905230.min.js"></script>
     <script src="/assets/dist/lucide.min.js"></script>
     <style>
@@ -588,7 +588,7 @@
 
 
     <script src="/assets/dist/bootstrap.bundle.min.js"></script>
-    <script src="/assets/dist/core-bundle.df013f3f.min.js"></script>
+    <script src="/assets/dist/core-bundle.2abaccd7.min.js"></script>
     <script>
     function esc(str) {
         if (!str) return '';
@@ -2423,22 +2423,26 @@
 
             const plantFacilitators = plantScopedMembers.filter(u => {
                 const r = (u.role || '').toLowerCase().trim();
-                return r === 'facilitator' || r.includes('facilitator') || r === 'admin';
+                return r === 'facilitator' || r.includes('facilitator') || r === 'admin' || r.includes('admin');
             });
             let facOptions = [...plantFacilitators];
             if (currentFacId && !facOptions.some(u => u.id == currentFacId)) {
                 const assignedFac = (this.govOrgMembers || []).find(u => u.id == currentFacId);
-                if (assignedFac) facOptions.unshift(assignedFac);
+                if (assignedFac) {
+                    facOptions.unshift(assignedFac);
+                }
             }
 
             const plantReviewers = plantScopedMembers.filter(u => {
                 const r = (u.role || '').toLowerCase().trim();
-                return r === 'reviewer' || r.includes('reviewer') || r === 'admin';
+                return r === 'reviewer' || r.includes('reviewer') || r === 'admin' || r.includes('admin');
             });
             let revOptions = [...plantReviewers];
             if (currentRevId && !revOptions.some(u => u.id == currentRevId)) {
                 const assignedRev = (this.govOrgMembers || []).find(u => u.id == currentRevId);
-                if (assignedRev) revOptions.unshift(assignedRev);
+                if (assignedRev) {
+                    revOptions.unshift(assignedRev);
+                }
             }
 
             let leaderHTML = '';
@@ -2447,17 +2451,17 @@
 
             if (isUserAdmin) {
                 leaderHTML = `
-                    <select class="ds-input ds-select text-sm fw-semibold" id="govTeamLeaderSelect">
+                    <select class="ds-input ds-select text-sm" id="govTeamLeaderSelect">
                         <option value="">-- Select Leader from Team --</option>
                         ${workingMembers.map(m => `<option value="${m.id}" ${m.id == currentLeaderId ? 'selected' : ''}>${esc(m.full_name || m.username)} (${esc(m.role || 'Member')})</option>`).join('')}
                     </select>`;
                 facHTML = `
-                    <select class="ds-input ds-select text-sm fw-semibold" id="govFacilitatorSelect">
+                    <select class="ds-input ds-select text-sm" id="govFacilitatorSelect">
                         <option value="">-- Unassigned --</option>
                         ${facOptions.map(u => `<option value="${u.id}" ${u.id == currentFacId ? 'selected' : ''}>${esc(u.full_name || u.username)} (${esc(u.role || 'Facilitator')}${u.plant_name ? ' - ' + esc(u.plant_name) : ''})</option>`).join('')}
                     </select>`;
                 revHTML = `
-                    <select class="ds-input ds-select text-sm fw-semibold" id="govReviewerSelect">
+                    <select class="ds-input ds-select text-sm" id="govReviewerSelect">
                         <option value="">-- Unassigned --</option>
                         ${revOptions.map(u => `<option value="${u.id}" ${u.id == currentRevId ? 'selected' : ''}>${esc(u.full_name || u.username)} (${esc(u.role || 'Reviewer')}${u.plant_name ? ' - ' + esc(u.plant_name) : ''})</option>`).join('')}
                     </select>`;

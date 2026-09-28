@@ -374,8 +374,20 @@ function updateHtmlFiles(manifest, coreCssFile, coreJsFile, stagesJsFile) {
         }
 
         if (content !== originalContent) {
-            fs.writeFileSync(htmlPath, content, 'utf8');
-            updatedCount++;
+            let written = false;
+            for (let attempt = 0; attempt < 5; attempt++) {
+                try {
+                    fs.writeFileSync(htmlPath, content, 'utf8');
+                    written = true;
+                    break;
+                } catch (e) {
+                    const waitTill = Date.now() + 100;
+                    while (Date.now() < waitTill) {}
+                }
+            }
+            if (written) {
+                updatedCount++;
+            }
         }
     }
     console.log(`  -> Updated ${updatedCount} HTML files to use hashed bundles, preloads, and minified scripts.`);

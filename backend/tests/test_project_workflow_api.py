@@ -52,3 +52,37 @@ def test_project_closure_service_lifecycle(app, auth_context):
         p_closed = db.session.get(Project, pid)
         assert p_closed.status == "Closed"
         assert p_closed.end_date is not None
+
+
+def test_project_governance_and_team_update(client, auth_context, app):
+    """Test updating team members, facilitator, team leader, and reviewer on project."""
+    with app.app_context():
+        project = Project(
+            title="Pytest Governance Team Update Project",
+            project_uid=f"PRJ-GOV-{int(time.time())}",
+            org_id=auth_context['org_id'],
+            creator_id=auth_context['user_id'],
+            current_stage=1,
+            status="In Progress"
+        )
+        db.session.add(project)
+        db.session.commit()
+        pid = project.id
+
+    payload = {
+        "team_leader_id": auth_context['user_id'],
+        "facilitator_id": auth_context['user_id'],
+        "reviewer_id": auth_context['user_id'],
+        "member_ids": [auth_context['user_id']]
+    }
+    res = client.put(f"/api/projects/{pid}", json=payload, headers=auth_context['headers'])
+    assert res.status_code == 200, f"Expected 200, got {res.status_code}: {res.get_data(as_text=True)}"
+    data = res.get_json()
+    assert data.get("msg") == "Project updated successfully"
+
+    with app.app_context():
+        p_updated = db.session.get(Project, pid)
+        assert p_updated.team_leader_id == auth_context['user_id']
+        assert p_updated.facilitator_id == auth_context['user_id']
+        assert p_updated.reviewer_id == auth_context['user_id']
+

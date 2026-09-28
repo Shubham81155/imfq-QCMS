@@ -1167,6 +1167,17 @@ def login():
     if not is_super_admin_user and user.organization and user.organization.subscription_status == 'Suspended':
         if (user.role.name if user.role else '') not in ('Admin', 'CEO', 'SuperAdmin'):
             return jsonify({"msg": "Your organization's account is suspended. Access denied. Please contact your administrator."}), 403
+
+    # If organization is in maintenance mode, restrict login to Admin or SuperAdmin only
+    if not is_super_admin_user and user.organization and getattr(user.organization, 'maintenance_mode', False):
+        if (user.role.name if user.role else '') not in ('Admin', 'SuperAdmin'):
+            org_name = user.organization.name or "Your organization"
+            return jsonify({
+                "msg": f"{org_name} is currently undergoing maintenance. Access is restricted to Administrators.",
+                "message": f"{org_name} is currently undergoing maintenance. Access is restricted to Administrators.",
+                "error_code": "MAINTENANCE_MODE",
+                "code": "MAINTENANCE_MODE"
+            }), 403
         
     # Clear lockout on successful authentication
     try:
@@ -2376,23 +2387,52 @@ def handle_support_tickets():
 
 @auth_bp.route('/maintenance-status', methods=['GET'])
 def maintenance_status():
-    from app.infrastructure.database.models.models import PlatformSettings
+    from app.infrastructure.database.models.models import PlatformSettings, User
     from sqlalchemy import text
     row = db.session.execute(
         text("SELECT maintenance_mode, maintenance_settings FROM platform_settings ORDER BY id ASC LIMIT 1")
     ).fetchone()
-    if not row:
-        return jsonify({"maintenance_mode": False}), 200
 
-    maint_mode = bool(row[0]) if row[0] is not None else False
-    import json as _json
+    maint_mode = bool(row[0]) if (row and row[0] is not None) else False
+    if maint_mode:
+        import json as _json
+        try:
+            maint_settings = _json.loads(row[1]) if isinstance(row[1], str) else (row[1] or {})
+        except Exception:
+            maint_settings = {}
+        return jsonify({
+            "maintenance_mode": True,
+            "scope": "platform",
+            "message": maint_settings.get("maintenance_message") or "The system is currently undergoing scheduled maintenance. Please try again later.",
+            "eta": maint_settings.get("estimated_completion") or ""
+        }), 200
+
+    # If platform maintenance is off, check organization maintenance for the authenticated user
     try:
-        maint_settings = _json.loads(row[1]) if isinstance(row[1], str) else (row[1] or {})
+        from flask_jwt_extended import verify_jwt_in_request, get_jwt_identity
+        verify_jwt_in_request(optional=True)
+        user_id = get_jwt_identity()
+        if user_id:
+            user = db.session.get(User, int(user_id))
+            if user and user.org_id:
+                org_row = db.session.execute(
+                    text("SELECT maintenance_mode, name FROM organizations WHERE id = :oid"),
+                    {"oid": user.org_id}
+                ).fetchone()
+                if org_row and bool(org_row[0]):
+                    role_name = (user.role.name if user.role else '').strip().lower()
+                    is_admin = role_name in ('admin', 'superadmin', 'super admin', 'super_admin') or getattr(user, 'is_super_admin', False)
+                    org_name = org_row[1] or "Your Organization"
+                    return jsonify({
+                        "maintenance_mode": True,
+                        "scope": "organization",
+                        "is_exempt": is_admin,
+                        "organization_name": org_name,
+                        "message": f"{org_name} is currently undergoing maintenance. System access is restricted to Administrators.",
+                        "eta": ""
+                    }), 200
     except Exception:
-        maint_settings = {}
-    return jsonify({
-        "maintenance_mode": maint_mode,
-        "message": maint_settings.get("maintenance_message") or "The system is currently undergoing scheduled maintenance. Please try again later.",
-        "eta": maint_settings.get("estimated_completion") or ""
-    }), 200
+        pass
+
+    return jsonify({"maintenance_mode": False}), 200
 

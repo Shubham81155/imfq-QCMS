@@ -1013,6 +1013,7 @@ def create_app():
             '/api/auth/maintenance-status',
             '/api/auth/login',
             '/api/auth/login-config',
+            '/api/auth/logout',
             '/api/super-admin',
             '/api/v1/super-admin'
         ]
@@ -1047,7 +1048,7 @@ def create_app():
                 identity = get_jwt_identity()
                 if identity:
                     user = db.session.get(User, int(identity))
-                    if user and user.role.name == 'SuperAdmin':
+                    if user and (user.role.name == 'SuperAdmin' or getattr(user, 'is_super_admin', False)):
                         is_super_admin = True
             except Exception:
                 pass
@@ -1061,6 +1062,32 @@ def create_app():
                         "message": msg,
                         "code": "MAINTENANCE_MODE"
                     }), 503
+        else:
+            # Check organization-level maintenance mode
+            from flask_jwt_extended import verify_jwt_in_request, get_jwt_identity
+            try:
+                verify_jwt_in_request(optional=True)
+                identity = get_jwt_identity()
+                if identity:
+                    user = db.session.get(User, int(identity))
+                    if user and user.org_id:
+                        org_row = db.session.execute(
+                            _sql_text("SELECT maintenance_mode, name FROM organizations WHERE id = :oid"),
+                            {"oid": user.org_id}
+                        ).fetchone()
+                        if org_row and bool(org_row[0]):
+                            user_role = (user.role.name if user.role else '').strip().lower()
+                            is_admin = user_role in ('admin', 'superadmin', 'super admin', 'super_admin') or getattr(user, 'is_super_admin', False)
+                            if not is_admin:
+                                if not (request.method == 'GET' and request.path == '/api/auth/me'):
+                                    org_name = org_row[1] or "Your organization"
+                                    return jsonify({
+                                        "status": "error",
+                                        "message": f"{org_name} is currently undergoing maintenance. System access is restricted to Administrators.",
+                                        "code": "MAINTENANCE_MODE"
+                                    }), 503
+            except Exception:
+                pass
 
     @app.before_request
     def check_organization_suspension():

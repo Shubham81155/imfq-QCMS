@@ -4180,13 +4180,21 @@ const ProjectApp = {
         }
 
         if (facSelect) {
-            facSelect.innerHTML = `<option value="">-- No Facilitator / Auto-assign --</option>` + users.map(u => `
+            const facUsers = users.filter(u => {
+                const r = (u.role || '').toLowerCase().trim();
+                return (r === 'facilitator' || r.includes('facilitator')) && !r.includes('admin');
+            });
+            facSelect.innerHTML = `<option value="">-- No Facilitator / Auto-assign --</option>` + facUsers.map(u => `
                 <option value="${u.id}" ${u.id == currentFac ? 'selected' : ''}>${formatUserOption(u)}</option>
             `).join('');
         }
 
         if (revSelect) {
-            revSelect.innerHTML = `<option value="">-- No Specific Reviewer / Org Pool --</option>` + users.map(u => `
+            const revUsers = users.filter(u => {
+                const r = (u.role || '').toLowerCase().trim();
+                return (r === 'reviewer' || r.includes('reviewer')) && !r.includes('admin');
+            });
+            revSelect.innerHTML = `<option value="">-- No Specific Reviewer / Org Pool --</option>` + revUsers.map(u => `
                 <option value="${u.id}" ${u.id == currentRev ? 'selected' : ''}>${formatUserOption(u)}</option>
             `).join('');
         }
@@ -4433,8 +4441,9 @@ const ProjectApp = {
             // Fallback: filter from window.orgUsers
             if (!members.length && window.orgUsers && window.orgUsers.length) {
                 members = window.orgUsers.filter(u => {
-                    if (roleName === 'Facilitator' && u.role !== 'Facilitator') return false;
-                    if (roleName === 'Reviewer' && u.role !== 'Reviewer') return false;
+                    const r = (u.role || '').toLowerCase().trim();
+                    if (roleName === 'Facilitator' && ((r !== 'facilitator' && !r.includes('facilitator')) || r.includes('admin'))) return false;
+                    if (roleName === 'Reviewer' && ((r !== 'reviewer' && !r.includes('reviewer')) || r.includes('admin'))) return false;
                     if (plantVal && (u.plant_name || u.location) !== plantVal) return false;
                     if (deptVal && u.department !== deptVal) return false;
                     return true;

@@ -108,21 +108,41 @@
     const isSuperAdminDashboard = page === 'super-admin.html';
     
     if (!isLandingPage && !isSuperAdminDashboard && page !== 'login.html') {
-        fetch('/api/auth/maintenance-status')
+        const maintHeaders = {};
+        if (token) {
+            maintHeaders['Authorization'] = 'Bearer ' + token;
+        }
+        fetch('/api/auth/maintenance-status', { headers: maintHeaders, credentials: 'same-origin' })
             .then(res => res.json())
             .then(data => {
                 if (data.maintenance_mode) {
                     let isSuperAdmin = false;
+                    let isAdmin = false;
                     try {
                         const user = JSON.parse(sessionStorage.getItem('user') || localStorage.getItem('user') || '{}');
                         const role = normalizeRole(user?.role);
                         if (role === 'SuperAdmin') {
                             isSuperAdmin = true;
                         }
+                        if (role === 'Admin') {
+                            isAdmin = true;
+                        }
                     } catch (e) {}
+
+                    // Org admin exemption: Admins are exempt from organization-level maintenance lockouts
+                    if (data.is_exempt || (data.scope === 'organization' && (isAdmin || isSuperAdmin))) {
+                        showMaintenanceBanner(data.message || 'Maintenance Mode is currently active for your organization. Only Administrators have access.');
+                        return;
+                    }
                     
                     if (!isSuperAdmin) {
                         showMaintenanceScreen(data.message, data.eta);
+                    }
+                } else {
+                    const existingBanner = document.getElementById('org-maintenance-banner');
+                    if (existingBanner) {
+                        existingBanner.remove();
+                        document.body.style.paddingTop = '';
                     }
                 }
             })
@@ -170,6 +190,13 @@
                     headers,
                     credentials: 'same-origin'
                 });
+                if (res.status === 503) {
+                    const data = await res.json().catch(() => ({}));
+                    if (data.code === 'MAINTENANCE_MODE') {
+                        showMaintenanceScreen(data.message);
+                        return;
+                    }
+                }
                 if (res.status === 401) {
                     const data = await res.json().catch(() => ({}));
                     const errText = (data.message || data.msg || '').toLowerCase();
@@ -489,6 +516,28 @@
             '</div>' +
             '</body></html>';
     }
+
+    function showMaintenanceBanner(message) {
+        if (document.getElementById('org-maintenance-banner')) return;
+        const banner = document.createElement('div');
+        banner.id = 'org-maintenance-banner';
+        banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:linear-gradient(90deg,#92400e,#b45309);color:#ffffff;padding:8px 16px;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:10px;box-shadow:0 2px 8px rgba(0,0,0,0.15);';
+        banner.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                <line x1="12" y1="9" x2="12" y2="13"/>
+                <line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+            <span><strong>Maintenance Mode Active:</strong> ${message || 'System access is restricted to Administrators only.'}</span>
+            <a href="/admin/settings.html" style="color:#fef3c7;text-decoration:underline;margin-left:8px;font-size:12px;">Settings</a>
+        `;
+        document.body.prepend(banner);
+        document.body.style.paddingTop = '36px';
+    }
+
+    window.showMaintenanceScreen = showMaintenanceScreen;
+    window.showMaintenanceBanner = showMaintenanceBanner;
+
     // Pages that DON'T need protection
     const publicPages = [
         'index.html',

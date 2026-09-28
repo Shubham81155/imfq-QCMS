@@ -2579,154 +2579,194 @@ def get_project_activity(id):
 @project_bp.route('/<int:id>', methods=['PATCH', 'PUT'])
 @jwt_required()
 def update_project(id):
-    user_id = get_jwt_identity()
-    user = db.session.get(User, user_id)
-    project = db.session.get(Project, id)
+    try:
+        user_identity = get_jwt_identity()
+        user_id = int(user_identity) if user_identity is not None and str(user_identity).isdigit() else user_identity
+        user = db.session.get(User, user_id) if user_id else None
+        project = db.session.get(Project, id)
 
-    user_is_sa = bool(user and user.role and user.role.name == 'SuperAdmin')
-    if not project or (not user_is_sa and project.org_id != user.org_id):
-        return jsonify({"msg": "Project not found"}), 404
+        user_is_sa = bool(user and user.role and user.role.name == 'SuperAdmin')
+        if not project or (not user_is_sa and (not user or project.org_id != user.org_id)):
+            return jsonify({"msg": "Project not found"}), 404
 
-    # RBAC: Only Admin, SuperAdmin, Project Creator, TL or TL of same dept
-    can_edit = ((user.role and user.role.name in ('Admin', 'SuperAdmin')) or 
-                project.creator_id == user.id or 
-                project.team_leader_id == user.id or
-                (user.role and user.role.name == 'Team Leader' and project.department_id == user.department_id))
+        # RBAC: Only Admin, SuperAdmin, CEO, Project Creator, TL or TL of same dept
+        can_edit = bool(
+            (user and user.role and user.role.name in ('Admin', 'SuperAdmin', 'CEO')) or 
+            (user and project.creator_id == user.id) or 
+            (user and project.team_leader_id == user.id) or
+            (user and user.role and user.role.name == 'Team Leader' and project.department_id == user.department_id) or
+            (user and getattr(user, 'is_admin', False))
+        )
 
-    if not can_edit:
-        return jsonify({"msg": "Permission denied"}), 403
+        if not can_edit:
+            return jsonify({"msg": "Permission denied"}), 403
 
-    data = request.json
-    if 'title' in data: project.title = data['title']
-    if 'description' in data: project.description = data['description']
-    if 'category' in data: project.category = data['category']
-    if 'department_id' in data: project.department_id = data['department_id']
-    old_tl = project.team_leader_id
-    old_fac = project.facilitator_id
-    old_rev = project.reviewer_id
-    from app.infrastructure.database.models.models import AuditLog, User
-    from flask import request as flask_request
-    ua_str = getattr(flask_request.user_agent, 'string', str(flask_request.user_agent or ''))
+        data = request.get_json(silent=True) or {}
+        if 'title' in data: project.title = data['title']
+        if 'description' in data: project.description = data['description']
+        if 'category' in data: project.category = data['category']
+        if 'department_id' in data: project.department_id = data['department_id']
+        old_tl = project.team_leader_id
+        old_fac = project.facilitator_id
+        old_rev = project.reviewer_id
 
-    if 'facilitator_id' in data:
-        fid = data['facilitator_id']
-        new_fac = int(fid) if fid is not None and str(fid).strip() != "" else None
-        if new_fac != old_fac:
-            project.facilitator_id = new_fac
-            old_f = db.session.get(User, old_fac) if old_fac else None
-            new_f = db.session.get(User, new_fac) if new_fac else None
-            db.session.add(AuditLog(
-                org_id=user.org_id, project_id=id, user_id=user_id,
-                action="Facilitator Assigned / Transitioned",
-                details=f"Facilitator changed from {old_f.full_name or old_f.username if old_f else 'None'} to {new_f.full_name or new_f.username if new_f else 'Unassigned'}.",
-                ip_address=flask_request.remote_addr, user_agent=ua_str,
-                target_table="projects", target_id=id
-            ))
-            if new_fac and new_fac != user_id:
-                from app.presentation.routes.notification_routes import create_notification
-                create_notification(user.org_id, new_fac, "Project Assigned", f"You have been assigned as the Facilitator for project '{project.title}'.", f"/projects/project-details.html?id={project.id}", commit=False)
+        from flask import request as flask_request
+        ua_str = getattr(flask_request.user_agent, 'string', str(flask_request.user_agent or ''))[:250]
+        curr_user_id = user.id if user else None
+        org_id = user.org_id if user else project.org_id
 
-    if 'team_leader_id' in data:
-        tl_val = data['team_leader_id']
-        new_tl = int(tl_val) if tl_val is not None and str(tl_val).strip() != "" else None
-        if new_tl != old_tl:
-            project.team_leader_id = new_tl
-            old_t = db.session.get(User, old_tl) if old_tl else None
-            new_t = db.session.get(User, new_tl) if new_tl else None
-            db.session.add(AuditLog(
-                org_id=user.org_id, project_id=id, user_id=user_id,
-                action="Team Leader Assigned / Transitioned",
-                details=f"Team Leader changed from {old_t.full_name or old_t.username if old_t else 'None'} to {new_t.full_name or new_t.username if new_t else 'Unassigned'}.",
-                ip_address=flask_request.remote_addr, user_agent=ua_str,
-                target_table="projects", target_id=id
-            ))
-            if new_tl and new_tl != user_id:
-                from app.presentation.routes.notification_routes import create_notification
-                create_notification(user.org_id, new_tl, "Project Assigned", f"You have been assigned as the Team Leader for project '{project.title}'.", f"/projects/project-details.html?id={project.id}", commit=False)
-
-    if 'reviewer_id' in data:
-        rid = data['reviewer_id']
-        new_rev = int(rid) if rid is not None and str(rid).strip() != "" else None
-        if new_rev != old_rev:
-            project.reviewer_id = new_rev
-            old_r = db.session.get(User, old_rev) if old_rev else None
-            new_r = db.session.get(User, new_rev) if new_rev else None
-            db.session.add(AuditLog(
-                org_id=user.org_id, project_id=id, user_id=user_id,
-                action="Reviewer Assigned / Transitioned",
-                details=f"Reviewer changed from {old_r.full_name or old_r.username if old_r else 'None'} to {new_r.full_name or new_r.username if new_r else 'Unassigned'}.",
-                ip_address=flask_request.remote_addr, user_agent=ua_str,
-                target_table="projects", target_id=id
-            ))
-            if new_rev and new_rev != user_id:
-                from app.presentation.routes.notification_routes import create_notification
-                create_notification(user.org_id, new_rev, "Project Assigned", f"You have been assigned as the Reviewer for project '{project.title}'.", f"/projects/project-details.html?id={project.id}", commit=False)
-
-    if 'deadline' in data:
-        try:
-            if data['deadline']:
-                project.deadline = datetime.strptime(data['deadline'], '%Y-%m-%d').date()
+        if 'facilitator_id' in data:
+            fid = data['facilitator_id']
+            new_fac = int(fid) if fid is not None and str(fid).strip() != "" and str(fid).isdigit() else None
+            if new_fac:
+                new_f = db.session.get(User, new_fac)
+                if not new_f:
+                    new_fac = None
             else:
-                project.deadline = None
-        except (ValueError, TypeError):
-            pass
+                new_f = None
 
-    if 'member_ids' in data:
-        raw_member_ids = data['member_ids']
-        if isinstance(raw_member_ids, list):
-            old_member_ids = set([m.user_id for m in ProjectMember.query.filter_by(project_id=id).all()])
-            cleaned_member_ids = set()
-            for mid in raw_member_ids:
-                if mid is not None:
+            if new_fac != old_fac:
+                project.facilitator_id = new_fac
+                old_f = db.session.get(User, old_fac) if old_fac else None
+                db.session.add(AuditLog(
+                    org_id=org_id, project_id=id, user_id=curr_user_id,
+                    action="Facilitator Assigned / Transitioned",
+                    details={"message": f"Facilitator changed from {old_f.full_name or old_f.username if old_f else 'None'} to {new_f.full_name or new_f.username if new_f else 'Unassigned'}."},
+                    ip_address=flask_request.remote_addr, user_agent=ua_str,
+                    target_table="projects", target_id=id
+                ))
+                if new_fac and new_fac != curr_user_id:
                     try:
-                        uid_val = int(mid)
-                        if uid_val > 0:
-                            cleaned_member_ids.add(uid_val)
+                        from app.presentation.routes.notification_routes import create_notification
+                        create_notification(org_id, new_fac, "Project Assigned", f"You have been assigned as the Facilitator for project '{project.title}'.", f"/projects/project-details.html?id={project.id}", commit=False)
+                    except Exception as e_notif:
+                        current_app.logger.warning(f"Failed to create facilitator notification: {e_notif}")
+
+        if 'team_leader_id' in data:
+            tl_val = data['team_leader_id']
+            new_tl = int(tl_val) if tl_val is not None and str(tl_val).strip() != "" and str(tl_val).isdigit() else None
+            if new_tl:
+                new_t = db.session.get(User, new_tl)
+                if not new_t:
+                    new_tl = None
+            else:
+                new_t = None
+
+            if new_tl != old_tl:
+                project.team_leader_id = new_tl
+                old_t = db.session.get(User, old_tl) if old_tl else None
+                db.session.add(AuditLog(
+                    org_id=org_id, project_id=id, user_id=curr_user_id,
+                    action="Team Leader Assigned / Transitioned",
+                    details={"message": f"Team Leader changed from {old_t.full_name or old_t.username if old_t else 'None'} to {new_t.full_name or new_t.username if new_t else 'Unassigned'}."},
+                    ip_address=flask_request.remote_addr, user_agent=ua_str,
+                    target_table="projects", target_id=id
+                ))
+                if new_tl and new_tl != curr_user_id:
+                    try:
+                        from app.presentation.routes.notification_routes import create_notification
+                        create_notification(org_id, new_tl, "Project Assigned", f"You have been assigned as the Team Leader for project '{project.title}'.", f"/projects/project-details.html?id={project.id}", commit=False)
+                    except Exception as e_notif:
+                        current_app.logger.warning(f"Failed to create team leader notification: {e_notif}")
+
+        if 'reviewer_id' in data:
+            rid = data['reviewer_id']
+            new_rev = int(rid) if rid is not None and str(rid).strip() != "" and str(rid).isdigit() else None
+            if new_rev:
+                new_r = db.session.get(User, new_rev)
+                if not new_r:
+                    new_rev = None
+            else:
+                new_r = None
+
+            if new_rev != old_rev:
+                project.reviewer_id = new_rev
+                old_r = db.session.get(User, old_rev) if old_rev else None
+                db.session.add(AuditLog(
+                    org_id=org_id, project_id=id, user_id=curr_user_id,
+                    action="Reviewer Assigned / Transitioned",
+                    details={"message": f"Reviewer changed from {old_r.full_name or old_r.username if old_r else 'None'} to {new_r.full_name or new_r.username if new_r else 'Unassigned'}."},
+                    ip_address=flask_request.remote_addr, user_agent=ua_str,
+                    target_table="projects", target_id=id
+                ))
+                if new_rev and new_rev != curr_user_id:
+                    try:
+                        from app.presentation.routes.notification_routes import create_notification
+                        create_notification(org_id, new_rev, "Project Assigned", f"You have been assigned as the Reviewer for project '{project.title}'.", f"/projects/project-details.html?id={project.id}", commit=False)
+                    except Exception as e_notif:
+                        current_app.logger.warning(f"Failed to create reviewer notification: {e_notif}")
+
+        if 'deadline' in data:
+            try:
+                if data['deadline']:
+                    project.deadline = datetime.strptime(data['deadline'], '%Y-%m-%d').date()
+                else:
+                    project.deadline = None
+            except (ValueError, TypeError):
+                pass
+
+        if 'member_ids' in data:
+            raw_member_ids = data['member_ids']
+            if isinstance(raw_member_ids, list):
+                old_member_ids = set([m.user_id for m in ProjectMember.query.filter_by(project_id=id).all()])
+                cleaned_member_ids = set()
+                for mid in raw_member_ids:
+                    if mid is not None:
+                        try:
+                            uid_val = int(mid)
+                            if uid_val > 0:
+                                u_check = db.session.get(User, uid_val)
+                                if u_check:
+                                    cleaned_member_ids.add(uid_val)
+                        except (ValueError, TypeError):
+                            pass
+
+                # Ensure creator is always a member if creator_id exists and is valid
+                if project.creator_id:
+                    try:
+                        c_id = int(project.creator_id)
+                        if c_id > 0 and db.session.get(User, c_id):
+                            cleaned_member_ids.add(c_id)
                     except (ValueError, TypeError):
                         pass
 
-            # Ensure creator is always a member if creator_id exists and is valid
-            if project.creator_id:
-                try:
-                    c_id = int(project.creator_id)
-                    if c_id > 0:
-                        cleaned_member_ids.add(c_id)
-                except (ValueError, TypeError):
-                    pass
+                # Detect added members
+                added_ids = cleaned_member_ids - old_member_ids
+                for added_id in added_ids:
+                    u_obj = db.session.get(User, added_id)
+                    u_name = u_obj.full_name or u_obj.username if u_obj else f"User #{added_id}"
+                    db.session.add(AuditLog(
+                        org_id=org_id, project_id=id, user_id=curr_user_id,
+                        action="Team Member Joined Project",
+                        details={"message": f"{u_name} was added and joined the active project team."},
+                        ip_address=flask_request.remote_addr, user_agent=ua_str,
+                        target_table="project_members", target_id=added_id
+                    ))
 
-            # Detect added members
-            added_ids = cleaned_member_ids - old_member_ids
-            for added_id in added_ids:
-                u_obj = db.session.get(User, added_id)
-                u_name = u_obj.full_name or u_obj.username if u_obj else f"User #{added_id}"
-                db.session.add(AuditLog(
-                    org_id=user.org_id, project_id=id, user_id=user_id,
-                    action="Team Member Joined Project",
-                    details=f"{u_name} was added and joined the active project team.",
-                    ip_address=flask_request.remote_addr, user_agent=ua_str,
-                    target_table="project_members", target_id=added_id
-                ))
+                # Detect removed members (left project in middle)
+                removed_ids = old_member_ids - cleaned_member_ids
+                for rem_id in removed_ids:
+                    u_obj = db.session.get(User, rem_id)
+                    u_name = u_obj.full_name or u_obj.username if u_obj else f"User #{rem_id}"
+                    db.session.add(AuditLog(
+                        org_id=org_id, project_id=id, user_id=curr_user_id,
+                        action="Team Member Left Project (Transitioned in Middle)",
+                        details={"message": f"{u_name} left the project team / membership was removed from active roster."},
+                        ip_address=flask_request.remote_addr, user_agent=ua_str,
+                        target_table="project_members", target_id=rem_id
+                    ))
 
-            # Detect removed members (left project in middle)
-            removed_ids = old_member_ids - cleaned_member_ids
-            for rem_id in removed_ids:
-                u_obj = db.session.get(User, rem_id)
-                u_name = u_obj.full_name or u_obj.username if u_obj else f"User #{rem_id}"
-                db.session.add(AuditLog(
-                    org_id=user.org_id, project_id=id, user_id=user_id,
-                    action="Team Member Left Project (Transitioned in Middle)",
-                    details=f"{u_name} left the project team / membership was removed from active roster.",
-                    ip_address=flask_request.remote_addr, user_agent=ua_str,
-                    target_table="project_members", target_id=rem_id
-                ))
+                # Clear existing members and re-insert sanitized list
+                ProjectMember.query.filter_by(project_id=id).delete(synchronize_session=False)
+                for uid in cleaned_member_ids:
+                    db.session.add(ProjectMember(project_id=id, user_id=uid))
 
-            # Clear existing members and re-insert sanitized list
-            ProjectMember.query.filter_by(project_id=id).delete()
-            for uid in cleaned_member_ids:
-                db.session.add(ProjectMember(project_id=id, user_id=uid))
-
-    db.session.commit()
-    return jsonify({"msg": "Project updated successfully"}), 200
+        db.session.commit()
+        return jsonify({"msg": "Project updated successfully"}), 200
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.exception(f"Error updating project {id}: {e}")
+        return jsonify({"msg": f"Failed to update project: {str(e)}"}), 500
 
 
 @project_bp.route('/<int:id>', methods=['DELETE'])

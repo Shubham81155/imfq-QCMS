@@ -2,14 +2,14 @@
 <html lang="en">
 <head>
     <!-- Performance & Network Acceleration: Critical Preloads -->
-    <link rel="preload" href="/assets/dist/core.3f133274.min.css" as="style">
-    <link rel="preload" href="/assets/dist/auth-guard.2feac510.min.js" as="script">
-    <script src="/assets/dist/auth-guard.2feac510.min.js"></script>
+    <link rel="preload" href="/assets/dist/core.561d4d75.min.css" as="style">
+    <link rel="preload" href="/assets/dist/auth-guard.2d35b3d2.min.js" as="script">
+    <script src="/assets/dist/auth-guard.2d35b3d2.min.js"></script>
 
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Settings | OctaQube Enterprise</title>
-    <link rel="stylesheet" href="/assets/dist/core.3f133274.min.css">
+    <link rel="stylesheet" href="/assets/dist/core.561d4d75.min.css">
     <link rel="stylesheet" href="/assets/css/compliance-enterprise.css">
     <script src="/assets/dist/chart.min.js"></script>
     <script src="/assets/dist/breadcrumbs.cb905230.min.js"></script>
@@ -4270,7 +4270,7 @@ console.log(data);
     </style>
 
     <script src="/assets/dist/bootstrap.bundle.min.js"></script>
-    <script src="/assets/dist/core-bundle.df013f3f.min.js"></script>
+    <script src="/assets/dist/core-bundle.2abaccd7.min.js"></script>
     <script src="/assets/dist/platform-settings.05729cbd.min.js"></script>
     <script>
     const settingsManager = {
@@ -5999,14 +5999,24 @@ console.log(data);
         },
 
         async saveAllSecuritySettings() {
+            const isMaint = document.getElementById('maintenance_mode')?.checked || false;
             const secPayload = {
-                maintenance_mode: document.getElementById('maintenance_mode')?.checked || false
+                maintenance_mode: isMaint
             };
             try {
                 await api.put('/admin/org-settings', secPayload);
-                OctaQube.toast('Security settings saved successfully', 'success');
+                if (isMaint) {
+                    OctaQube.toast('Maintenance mode is now ACTIVE. Access is restricted to Admins.', 'warning');
+                    if (typeof showMaintenanceBanner === 'function') {
+                        showMaintenanceBanner('System access is restricted to Administrators only.');
+                    }
+                } else {
+                    OctaQube.toast('Maintenance mode deactivated. System access restored.', 'success');
+                    const b = document.getElementById('org-maintenance-banner');
+                    if (b) { b.remove(); document.body.style.paddingTop = ''; }
+                }
             } catch (e) {
-                OctaQube.toast('Failed to save security settings', 'error');
+                OctaQube.toast('Failed to save security settings: ' + (e.message || e), 'error');
             }
         },
 
@@ -6095,7 +6105,13 @@ console.log(data);
                     const lang = document.getElementById('org_language'); if (lang) lang.value = settings.language || 'en';
                     
                     // Security & Privacy
-                    const mm = document.getElementById('maintenance_mode'); if (mm) mm.checked = !!settings.maintenance_mode;
+                    const mm = document.getElementById('maintenance_mode');
+                    if (mm) mm.checked = !!settings.maintenance_mode;
+                    if (settings.maintenance_mode) {
+                        if (typeof showMaintenanceBanner === 'function') {
+                            showMaintenanceBanner('System access is restricted to Administrators only.');
+                        }
+                    }
                     
                     // Project Timeline & Inactivity
                     const pid = document.getElementById('project_inactivity_days'); if (pid) pid.value = settings.project_inactivity_days || 30;
@@ -6652,6 +6668,14 @@ ET`;
             
             try {
                 await api.put('/admin/org-settings', payload);
+                if (payload.maintenance_mode) {
+                    if (typeof showMaintenanceBanner === 'function') {
+                        showMaintenanceBanner('System access is restricted to Administrators only.');
+                    }
+                } else {
+                    const b = document.getElementById('org-maintenance-banner');
+                    if (b) { b.remove(); document.body.style.paddingTop = ''; }
+                }
                 OctaQube.toast('Organization settings updated successfully.', 'success');
                 if (typeof this.captureInitialValues === 'function') this.captureInitialValues();
 
