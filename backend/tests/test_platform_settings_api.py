@@ -161,8 +161,8 @@ def test_organization_maintenance_mode(client, auth_context, app):
             db.session.commit()
             tm_id = tm_user.id
             tm_username = tm_user.username
+            tm_token = create_access_token(identity=str(tm_id))
 
-        tm_token = create_access_token(identity=str(tm_id))
         tm_headers = {'Authorization': f'Bearer {tm_token}', 'Content-Type': 'application/json'}
 
         # 2. Check /api/auth/maintenance-status for Team Member: maintenance_mode is True, is_exempt is False
