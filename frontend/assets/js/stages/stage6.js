@@ -314,13 +314,32 @@ const Stage6 = {
         `;
     },
 
-    init(projectData) {
+    async init(projectData) {
         this.projectData = projectData;
         const wf = projectData.workflows || [];
-        const d = wf.find(w => w.stage_id === 6)?.data || {};
+        let d = wf.find(w => w.stage_id === 6)?.data || projectData.stage6_data || {};
+        if (typeof d === 'string') {
+            try { d = JSON.parse(d); } catch (_) {}
+        }
+
+        // If empty, attempt fallback fetch from API
+        if ((!d.countermeasure_task_assignments && !d.countermeasures && !d.full_scale_implementation && !d.change_management) && projectData.id) {
+            try {
+                if (window.api && typeof window.api.get === 'function') {
+                    const stgRes = await window.api.get(`/projects/${projectData.id}/stage/6`);
+                    if (stgRes && typeof stgRes === 'object') {
+                        d = { ...d, ...stgRes };
+                    }
+                }
+            } catch (err) {
+                console.warn('[Stage 6] Fallback fetch failed:', err);
+            }
+        }
         
         // Countermeasure Task Assignments (Merged Section 1)
-        const tasksArr = (d.countermeasure_task_assignments && d.countermeasure_task_assignments.length) ? d.countermeasure_task_assignments : (d.countermeasures || d.task_management || []);
+        const tasksArr = (d.countermeasure_task_assignments && d.countermeasure_task_assignments.length)
+            ? d.countermeasure_task_assignments
+            : (d.countermeasures || d.full_scale_implementation || d.pilot_execution || d.task_management || []);
         const taskContainer = document.getElementById('s6_taskContainer');
         if (taskContainer) {
             taskContainer.innerHTML = '';
@@ -444,6 +463,9 @@ const Stage6 = {
         this.checkSideEffects();
 
         if (window.lucide) lucide.createIcons();
+        if (typeof ProjectApp !== 'undefined' && typeof ProjectApp.applyPermissions === 'function') {
+            ProjectApp.applyPermissions(6);
+        }
     },
 
     collectData() {

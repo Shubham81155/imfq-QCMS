@@ -432,23 +432,40 @@ const Stage3 = {
         `;
     },
 
-    init(projectData) {
+    async init(projectData) {
         this.projectData = projectData;
         const wf = projectData.workflows || [];
-        const d = wf.find(w => w.stage_id === 3)?.data || {};
+        let d = wf.find(w => w.stage_id === 3)?.data || projectData.stage3_data || {};
+        if (typeof d === 'string') {
+            try { d = JSON.parse(d); } catch (_) {}
+        }
+
+        // If empty, attempt fallback fetch from API
+        if ((!d.brainstorming && !d.brainstorming_ideas && !d.fishbone_l2 && !d.cause_and_effect) && projectData.id) {
+            try {
+                if (window.api && typeof window.api.get === 'function') {
+                    const stgRes = await window.api.get(`/projects/${projectData.id}/stage/3`);
+                    if (stgRes && typeof stgRes === 'object') {
+                        d = { ...d, ...stgRes };
+                    }
+                }
+            } catch (err) {
+                console.warn('[Stage 3] Fallback fetch failed:', err);
+            }
+        }
         
         // Brainstorming
-        const bs = d.brainstorming || {};
-        this.setVal('s3_bs_session', bs.session_name);
-        this.setVal('s3_bs_facilitator', bs.facilitator);
-        this.setVal('s3_bs_participants', bs.participants);
-        this.setVal('s3_bs_date', bs.date);
-        this.setVal('s3_bs_notes', bs.notes);
+        const bs = d.brainstorming || d.brainstorming_ideas || {};
+        this.setVal('s3_bs_session', bs.session_name || bs.session || '');
+        this.setVal('s3_bs_facilitator', bs.facilitator || '');
+        this.setVal('s3_bs_participants', bs.participants || '');
+        this.setVal('s3_bs_date', bs.date || '');
+        this.setVal('s3_bs_notes', bs.notes || '');
 
         this.initFacilitatorDropdown(projectData, bs.facilitator);
 
         // Fetch Stage 1 Problem Statement for fishbone Effect Head
-        const s1 = wf.find(w => w.stage_id === 1)?.data || {};
+        const s1 = wf.find(w => w.stage_id === 1)?.data || projectData.stage1_data || {};
         const problemEffect = projectData.title || (s1.theme_target_schedule || {}).improvement_theme || 'Process Defects';
         const effectTextEl = document.getElementById('fishboneEffectText');
         if (effectTextEl) {
@@ -459,7 +476,7 @@ const Stage3 = {
         this.initPareto();
 
         // Fishbone L1 & L2
-        const fb = d.fishbone_l2 || [];
+        const fb = d.fishbone_l2 || d.cause_and_effect || [];
         const fbContainer = document.getElementById('s3_fishboneContainer');
         fbContainer.innerHTML = `
             <div class="row text-muted small fw-bold mb-2 px-2">
@@ -493,7 +510,7 @@ const Stage3 = {
         this.drawVisualFishbone();
 
         // Register: Sync from Selected Fishbone causes
-        const reg = d.cause_register || [];
+        const reg = d.cause_register || d.shortlisted_causes || [];
         const fishboneRows = this.collectFishboneRows();
         const selectedFishboneRows = fishboneRows.filter(r => r.status === 'Selected' && r.level1 && r.level1.trim());
 
@@ -562,6 +579,9 @@ const Stage3 = {
         this.setVal('s3_gate_comments', gate.comments);
 
         if (window.lucide) lucide.createIcons();
+        if (typeof ProjectApp !== 'undefined' && typeof ProjectApp.applyPermissions === 'function') {
+            ProjectApp.applyPermissions(3);
+        }
     },
 
     getVitalFewCauses() {

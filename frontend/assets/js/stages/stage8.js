@@ -515,18 +515,41 @@ const Stage8 = {
         `;
     },
 
-    init(projectData) {
+    async init(projectData) {
         this.projectData = projectData;
         const wf = projectData.workflows || [];
-        const d = wf.find(w => w.stage_id === 8)?.data || {};
+        let d = wf.find(w => w.stage_id === 8)?.data || projectData.stage8_data || {};
+        if (typeof d === 'string') {
+            try { d = JSON.parse(d); } catch (_) {}
+        }
 
-        const s4 = wf.find(w => w.stage_id === 4)?.data || {};
-        const s5 = wf.find(w => w.stage_id === 5)?.data || {};
-        const s7 = wf.find(w => w.stage_id === 7)?.data || {};
+        // If empty, attempt fallback fetch from API
+        if ((!d.standardization && !d.sop_standardization && !d.project_closure && !d.lessons_learned) && projectData.id) {
+            try {
+                if (window.api && typeof window.api.get === 'function') {
+                    const stgRes = await window.api.get(`/projects/${projectData.id}/stage/8`);
+                    if (stgRes && typeof stgRes === 'object') {
+                        d = { ...d, ...stgRes };
+                    }
+                }
+            } catch (err) {
+                console.warn('[Stage 8] Fallback fetch failed:', err);
+            }
+        }
+
+        const s4 = wf.find(w => w.stage_id === 4)?.data || projectData.stage4_data || {};
+        const s5 = wf.find(w => w.stage_id === 5)?.data || projectData.stage5_data || {};
+        const s7 = wf.find(w => w.stage_id === 7)?.data || projectData.stage7_data || {};
 
         ['std', 'training', 'deploy', 'lesson', 'benefit', 'opp', 'repo', 'team'].forEach(key => {
-            const arr = d[this.getMap(key)] || [];
-            if (arr.length) {
+            let arr = d[this.getMap(key)] || [];
+            if (!arr || !arr.length) {
+                if (key === 'std') arr = d.sop_standardization || d.sop || [];
+                else if (key === 'deploy') arr = d.horizontal_deployment || [];
+                else if (key === 'lesson') arr = d.lessons_learned || [];
+                else if (key === 'team') arr = d.team_recognition || [];
+            }
+            if (arr && arr.length) {
                 arr.forEach(r => this[`add${this.capitalize(key)}Row`](r));
             } else {
                 // Auto-populate fallbacks from upstream stages if empty
@@ -665,6 +688,9 @@ const Stage8 = {
         const roleNormalized = role.toLowerCase().trim().replace(/[^a-z0-9]/g, '');
         if (roleNormalized !== 'teammember') {
             this.disableBenefitSummarySection();
+        }
+        if (typeof ProjectApp !== 'undefined' && typeof ProjectApp.applyPermissions === 'function') {
+            ProjectApp.applyPermissions(8);
         }
     },
 

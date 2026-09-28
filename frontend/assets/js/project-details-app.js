@@ -1455,7 +1455,7 @@ const ProjectApp = {
     async saveDraft() {
         const sessionUser = JSON.parse(sessionStorage.getItem('user') || '{}');
         const role = ((sessionUser.role && sessionUser.role.name) ? sessionUser.role.name : (sessionUser.role || '')).toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (!['teamleader', 'teammember'].includes(role)) {
+        if (!['teamleader', 'teammember', 'admin', 'superadmin'].includes(role)) {
             OctaQube.toast('Access denied. Only assigned Team Leader and Team Members can edit project details.', 'warning');
             return false;
         }

@@ -244,10 +244,27 @@ const Stage5 = {
         `;
     },
 
-    init(projectData) {
+    async init(projectData) {
         this.projectData = projectData;
         const wf = projectData.workflows || [];
-        const d = wf.find(w => w.stage_id === 5)?.data || {};
+        let d = wf.find(w => w.stage_id === 5)?.data || projectData.stage5_data || {};
+        if (typeof d === 'string') {
+            try { d = JSON.parse(d); } catch (_) {}
+        }
+
+        // If empty, attempt fallback fetch from API
+        if ((!d.root_cause_mapping && !d.proposed_countermeasures && !d.solution_evaluation && !d.solution_evaluation_matrix) && projectData.id) {
+            try {
+                if (window.api && typeof window.api.get === 'function') {
+                    const stgRes = await window.api.get(`/projects/${projectData.id}/stage/5`);
+                    if (stgRes && typeof stgRes === 'object') {
+                        d = { ...d, ...stgRes };
+                    }
+                }
+            } catch (err) {
+                console.warn('[Stage 5] Fallback fetch failed:', err);
+            }
+        }
 
         // Display Verified Root Cause(s) at the top of the page
         const rcs = this.getStage4RootCauses();
@@ -261,7 +278,13 @@ const Stage5 = {
         // Fill containers
         const containers = ['mapping', 'bs', 'eval', 'cba', 'se', 'pilot', 'action'];
         containers.forEach(key => {
-            const arr = d[this.getMap(key)] || [];
+            let arr = d[this.getMap(key)] || [];
+            if (!arr || !arr.length) {
+                if (key === 'mapping') arr = d.proposed_countermeasures || [];
+                else if (key === 'eval') arr = d.solution_evaluation_matrix || [];
+                else if (key === 'se') arr = d.risk_assessment_fmea || [];
+                else if (key === 'action') arr = d.action_plan_5w1h || d.action_plan || [];
+            }
             const containerEl = document.getElementById(`s5_${key}Container`);
             if (containerEl) {
                 // Clear dyn-rows except headers
@@ -286,6 +309,9 @@ const Stage5 = {
         this.setVal('s5_gate_comments', gate.comments);
 
         if (window.lucide) lucide.createIcons();
+        if (typeof ProjectApp !== 'undefined' && typeof ProjectApp.applyPermissions === 'function') {
+            ProjectApp.applyPermissions(5);
+        }
     },
 
     getStage4RootCauses() {

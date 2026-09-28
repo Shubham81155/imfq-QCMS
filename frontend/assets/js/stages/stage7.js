@@ -358,22 +358,44 @@ const Stage7 = {
         `;
     },
 
-    init(projectData) {
+    async init(projectData) {
         this.projectData = projectData;
         const wf = projectData.workflows || [];
-        const d = wf.find(w => w.stage_id === 7)?.data || {};
+        let d = wf.find(w => w.stage_id === 7)?.data || projectData.stage7_data || {};
+        if (typeof d === 'string') {
+            try { d = JSON.parse(d); } catch (_) {}
+        }
+
+        // If empty, attempt fallback fetch from API
+        if ((!d.kpi_verification && !d.before_vs_after && !d.before_after_comparison && !d.benefit_realization) && projectData.id) {
+            try {
+                if (window.api && typeof window.api.get === 'function') {
+                    const stgRes = await window.api.get(`/projects/${projectData.id}/stage/7`);
+                    if (stgRes && typeof stgRes === 'object') {
+                        d = { ...d, ...stgRes };
+                    }
+                }
+            } catch (err) {
+                console.warn('[Stage 7] Fallback fetch failed:', err);
+            }
+        }
         
         // Populate tables
         const tables = ['kpi', 'beforeAfter', 'stat', 'benefit', 'sustain', 'sideEffect', 'lesson'];
         tables.forEach(key => {
-            const arr = d[this.getMap(key)] || [];
+            let arr = d[this.getMap(key)] || [];
+            if (!arr || !arr.length) {
+                if (key === 'beforeAfter') arr = d.before_after_comparison || [];
+                else if (key === 'benefit') arr = d.tangible_benefits || [];
+                else if (key === 'sustain') arr = d.sustainability_checks || [];
+            }
             const containerEl = document.getElementById(`s7_${key}Container`);
             if (containerEl) {
                 const firstRow = containerEl.querySelector('.row');
                 containerEl.innerHTML = '';
                 if (firstRow) containerEl.appendChild(firstRow);
             }
-            if (arr.length) {
+            if (arr && arr.length) {
                 arr.forEach(r => this[`add${this.capitalize(key)}Row`](r));
             } else {
                 this[`add${this.capitalize(key)}Row`]();
@@ -418,6 +440,9 @@ const Stage7 = {
         this.setVal('s7_gate_comments', gate.comments);
 
         if (window.lucide) lucide.createIcons();
+        if (typeof ProjectApp !== 'undefined' && typeof ProjectApp.applyPermissions === 'function') {
+            ProjectApp.applyPermissions(7);
+        }
     },
 
     collectData() {

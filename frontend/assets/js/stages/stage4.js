@@ -343,12 +343,29 @@ const Stage4 = {
         `;
     },
 
-    init(projectData) {
+    async init(projectData) {
         this.projectData = projectData;
         const wf = projectData.workflows || [];
-        const d = wf.find(w => w.stage_id === 4)?.data || {};
+        let d = wf.find(w => w.stage_id === 4)?.data || projectData.stage4_data || {};
+        if (typeof d === 'string') {
+            try { d = JSON.parse(d); } catch (_) {}
+        }
+
+        // If empty, attempt fallback fetch from API
+        if ((!d.verified_causes && !d.root_cause_verification && !d.why_why_analysis && !d.five_why_analysis) && projectData.id) {
+            try {
+                if (window.api && typeof window.api.get === 'function') {
+                    const stgRes = await window.api.get(`/projects/${projectData.id}/stage/4`);
+                    if (stgRes && typeof stgRes === 'object') {
+                        d = { ...d, ...stgRes };
+                    }
+                }
+            } catch (err) {
+                console.warn('[Stage 4] Fallback fetch failed:', err);
+            }
+        }
         
-        let ver = (d.verified_causes || []).filter(r => r && r.cause && r.cause.trim());
+        let ver = (d.verified_causes || d.root_cause_verification || []).filter(r => r && r.cause && r.cause.trim());
         if (!ver.length) {
             const s3Causes = this.extractStage3Causes();
             if (s3Causes.length) {
@@ -474,7 +491,7 @@ const Stage4 = {
         this.calcControlChart();
 
         // Why-Why Analysis
-        const why = d.why_why_analysis || [];
+        const why = d.why_why_analysis || d.five_why_analysis || [];
         const whyContainer = document.getElementById('s4_whyContainer');
         whyContainer.innerHTML = '';
         if (why.length) why.forEach(r => this.addWhyRow(r));
@@ -482,7 +499,7 @@ const Stage4 = {
         this.updateWhyCauseDropdowns();
 
         // Root cause register
-        const rootReg = d.root_cause_register || [];
+        const rootReg = d.root_cause_register || d.root_causes || [];
         const rootRegContainer = document.getElementById('s4_rootRegisterContainer');
         rootRegContainer.innerHTML = `
             <div class="row text-muted small fw-bold mb-2 px-2">
@@ -517,6 +534,9 @@ const Stage4 = {
         this.setVal('s4_gate_comments', gate.comments);
 
         if (window.lucide) lucide.createIcons();
+        if (typeof ProjectApp !== 'undefined' && typeof ProjectApp.applyPermissions === 'function') {
+            ProjectApp.applyPermissions(4);
+        }
     },
 
     collectData() {

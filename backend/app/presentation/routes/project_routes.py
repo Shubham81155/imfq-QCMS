@@ -1294,6 +1294,7 @@ def save_stage_generic(id, stage_id):
     project = db.session.get(Project, id)
 
     user_is_sa = bool(user and user.role and user.role.name == 'SuperAdmin')
+    user_is_admin = bool(user and user.role and user.role.name in ('Admin', 'SuperAdmin'))
     if not project or (not user_is_sa and project.org_id != user.org_id):
         return jsonify({"msg": "Project not found"}), 404
 
@@ -1301,8 +1302,14 @@ def save_stage_generic(id, stage_id):
     if project.status in ('Rejected', 'Stage 1 Rejected') or (project.status and 'Rejected' in str(project.status)):
         return jsonify({"msg": "This project has been permanently rejected and cannot be modified or re-submitted."}), 400
 
-    # STRICT RULE: Only assigned Team Leader or Team Member can edit stage details (Admin is read-only)
-    is_authorized = user.role.name in ('Team Leader', 'Team Member')
+    # Authorization: Admins, TL, Team Member, Project Creator, Team Leader ID, or Project Members
+    is_authorized = (
+        user_is_admin or
+        (user.role and user.role.name in ('Team Leader', 'Team Member', 'Facilitator')) or
+        project.creator_id == user_id or
+        project.team_leader_id == user_id or
+        any(m.id == user_id for m in project.members)
+    )
     if not is_authorized:
         return jsonify({"msg": f"Access denied. Only assigned Team Leaders and Team Members can edit Stage {stage_id} details."}), 403
 
@@ -1326,16 +1333,119 @@ def save_stage_generic(id, stage_id):
     if 'sop' in payload:
         sync_sop_from_stage8(id, payload['sop'], user_id)
 
-    # Sync Stage 2 standard verification if payload includes verification data
-    if stage_id == 2:
-        from app.infrastructure.database.models.models import Stage2ObservationDataCollection
-        s2 = Stage2ObservationDataCollection.query.filter_by(project_id=id).first()
-        sv_incoming = payload.get('standard_verification') or payload.get('interim_verification')
-        if sv_incoming:
+    # Sync to dedicated stage models
+    try:
+        if stage_id == 2:
+            from app.infrastructure.database.models.models import Stage2ObservationDataCollection
+            s2 = Stage2ObservationDataCollection.query.filter_by(project_id=id).first()
             if not s2:
                 s2 = Stage2ObservationDataCollection(project_id=id, org_id=user.org_id)
                 db.session.add(s2)
-            s2.interim_verification = sv_incoming
+            if 'containment_actions' in payload: s2.containment_actions = payload['containment_actions']
+            if 'data_collection_plan' in payload: s2.data_collection_plan = payload['data_collection_plan']
+            if 'gemba_observations' in payload: s2.gemba_observations = payload['gemba_observations']
+            sv = payload.get('standard_verification') or payload.get('interim_verification')
+            if sv: s2.interim_verification = sv
+
+        elif stage_id == 3:
+            from app.infrastructure.database.models.models import Stage3CauseIdentification
+            s3 = Stage3CauseIdentification.query.filter_by(project_id=id).first()
+            if not s3:
+                s3 = Stage3CauseIdentification(project_id=id, org_id=user.org_id)
+                db.session.add(s3)
+            bs = payload.get('brainstorming') or payload.get('brainstorming_ideas')
+            if bs is not None: s3.brainstorming_ideas = bs
+            fb = payload.get('fishbone_l2') or payload.get('cause_and_effect')
+            if fb is not None: s3.cause_and_effect = fb
+            cr = payload.get('cause_register') or payload.get('shortlisted_causes')
+            if cr is not None: s3.shortlisted_causes = cr
+            strat = payload.get('stratification_data')
+            if strat is not None: s3.stratification_data = strat
+
+        elif stage_id == 4:
+            from app.infrastructure.database.models.models import Stage4RootCauseAnalysisVerification
+            s4 = Stage4RootCauseAnalysisVerification.query.filter_by(project_id=id).first()
+            if not s4:
+                s4 = Stage4RootCauseAnalysisVerification(project_id=id, org_id=user.org_id)
+                db.session.add(s4)
+            why = payload.get('why_why_analysis') or payload.get('five_why_analysis')
+            if why is not None: s4.five_why_analysis = why
+            rc = payload.get('verified_causes') or payload.get('root_causes') or payload.get('root_cause_verification')
+            if rc is not None: s4.root_cause_verification = rc
+            stat = payload.get('statistical_validation')
+            if stat is not None: s4.statistical_validation = stat
+
+        elif stage_id == 5:
+            from app.infrastructure.database.models.models import Stage5CountermeasurePlanningSolutionDevelopment
+            s5 = Stage5CountermeasurePlanningSolutionDevelopment.query.filter_by(project_id=id).first()
+            if not s5:
+                s5 = Stage5CountermeasurePlanningSolutionDevelopment(project_id=id, org_id=user.org_id)
+                db.session.add(s5)
+            cm = payload.get('root_cause_mapping') or payload.get('proposed_countermeasures') or payload.get('solution_brainstorming')
+            if cm is not None: s5.proposed_countermeasures = cm
+            ev = payload.get('solution_evaluation') or payload.get('solution_evaluation_matrix')
+            if ev is not None: s5.solution_evaluation_matrix = ev
+            fmea = payload.get('side_effect_analysis') or payload.get('risk_assessment_fmea')
+            if fmea is not None: s5.risk_assessment_fmea = fmea
+            act = payload.get('action_plan_3w1h') or payload.get('action_plan_5w1h') or payload.get('action_plan')
+            if act is not None: s5.action_plan_5w1h = act
+
+        elif stage_id == 6:
+            from app.infrastructure.database.models.models import Stage6ImplementationChangeManagement
+            s6 = Stage6ImplementationChangeManagement.query.filter_by(project_id=id).first()
+            if not s6:
+                s6 = Stage6ImplementationChangeManagement(project_id=id, org_id=user.org_id)
+                db.session.add(s6)
+            pilot = payload.get('pilot_execution')
+            if pilot is not None: s6.pilot_execution = pilot
+            full = payload.get('countermeasure_task_assignments') or payload.get('countermeasures') or payload.get('full_scale_implementation')
+            if full is not None: s6.full_scale_implementation = full
+            tr = payload.get('communication_training') or payload.get('training_and_sop')
+            if tr is not None: s6.training_and_sop = tr
+            ch = payload.get('change_management') or payload.get('change_management_log')
+            if ch is not None: s6.change_management_log = ch
+
+        elif stage_id == 7:
+            from app.infrastructure.database.models.models import Stage7PerformanceVerificationBenefitsRealization
+            s7 = Stage7PerformanceVerificationBenefitsRealization.query.filter_by(project_id=id).first()
+            if not s7:
+                s7 = Stage7PerformanceVerificationBenefitsRealization(project_id=id, org_id=user.org_id)
+                db.session.add(s7)
+            ba = payload.get('before_vs_after') or payload.get('before_after_comparison') or payload.get('results_comparison')
+            if ba is not None: s7.before_after_comparison = ba
+            tb = payload.get('benefit_realization') or payload.get('tangible_benefits') or payload.get('benefits_realization')
+            if tb is not None: s7.tangible_benefits = tb
+            sc = payload.get('sustainability_check') or payload.get('sustainability_checks')
+            if sc is not None: s7.sustainability_checks = sc
+
+        elif stage_id == 8:
+            from app.infrastructure.database.models.models import Stage8StandardizationKnowledgeSharingProjectClosure, Stage8Standardization
+            s8_rec = Stage8StandardizationKnowledgeSharingProjectClosure.query.filter_by(project_id=id).first()
+            if not s8_rec:
+                s8_rec = Stage8StandardizationKnowledgeSharingProjectClosure(project_id=id, org_id=user.org_id)
+                db.session.add(s8_rec)
+            s8_std = Stage8Standardization.query.filter_by(project_id=id).first()
+            if not s8_std:
+                s8_std = Stage8Standardization(project_id=id, org_id=user.org_id)
+                db.session.add(s8_std)
+            std_val = payload.get('standardization') or payload.get('sop_standardization') or payload.get('sop')
+            if std_val is not None:
+                s8_rec.sop_standardization = std_val
+                s8_std.standardization = std_val
+            dep = payload.get('horizontal_deployment')
+            if dep is not None:
+                s8_rec.horizontal_deployment = dep
+                s8_std.horizontal_deployment = dep
+            les = payload.get('lessons_learned')
+            if les is not None:
+                s8_rec.lessons_learned = les
+                s8_std.lessons_learned = les
+            team = payload.get('team_recognition')
+            if team is not None:
+                s8_rec.team_recognition = team
+                s8_std.team_recognition = team
+    except Exception as sync_err:
+        print(f"[QCMS Stage Sync Warning] Failed to sync dedicated stage table for stage {stage_id}: {sync_err}")
 
     from app.infrastructure.database.models.models import AuditLog
     db.session.add(AuditLog(
@@ -1361,6 +1471,7 @@ def submit_stage_generic(id, stage_id):
     project = db.session.get(Project, id)
 
     user_is_sa = bool(user and user.role and user.role.name == 'SuperAdmin')
+    user_is_admin = bool(user and user.role and user.role.name in ('Admin', 'SuperAdmin'))
     if not project or (not user_is_sa and project.org_id != user.org_id):
         return jsonify({"msg": "Project not found"}), 404
 
@@ -1368,8 +1479,14 @@ def submit_stage_generic(id, stage_id):
     if project.status in ('Rejected', 'Stage 1 Rejected') or (project.status and 'Rejected' in str(project.status)):
         return jsonify({"msg": "This project has been permanently rejected and cannot be submitted for review."}), 400
 
-    # STRICT RULE: Only assigned Team Leader or Team Member can submit stages (Admin is read-only)
-    is_authorized = user.role.name in ('Team Leader', 'Team Member')
+    # Authorization: Admins, TL, Team Member, Project Creator, Team Leader ID, or Project Members
+    is_authorized = (
+        user_is_admin or
+        (user.role and user.role.name in ('Team Leader', 'Team Member')) or
+        project.creator_id == user_id or
+        project.team_leader_id == user_id or
+        any(m.id == user_id for m in project.members)
+    )
     if not is_authorized:
         return jsonify({"msg": f"Access denied. Only assigned Team Leaders and Team Members can submit Stage {stage_id} for review."}), 403
 
@@ -2168,11 +2285,37 @@ def get_project_details(id_or_uid):
     completed_stage_numbers = {s.stage_number for s in stages if s.status in ('Completed', 'Approved')}
     wf_snapshots = {w.stage_id: w.template_snapshot for w in ProjectWorkflow.query.filter_by(project_id=project.id).all() if w.template_snapshot}
 
-    # Aggregate workflow stage data and ensure Stage 2 standard verification is fully merged
+    # Aggregate workflow stage data and ensure all stage models are fully merged
     all_wfs_query = ProjectWorkflow.query.filter_by(project_id=project.id).all()
     workflows_by_stage = {w.stage_id: dict(w.data or {}) for w in all_wfs_query}
 
-    from app.infrastructure.database.models.models import Stage2ObservationDataCollection
+    from app.infrastructure.database.models.models import (
+        Stage1ProblemDefinitionProjectInitiation,
+        Stage2ObservationDataCollection,
+        Stage3CauseIdentification,
+        Stage4RootCauseAnalysisVerification,
+        Stage5CountermeasurePlanningSolutionDevelopment,
+        Stage6ImplementationChangeManagement,
+        Stage7PerformanceVerificationBenefitsRealization,
+        Stage8StandardizationKnowledgeSharingProjectClosure,
+        Stage8Standardization
+    )
+
+    # 1. Merge Stage 1
+    s1_record = Stage1ProblemDefinitionProjectInitiation.query.filter_by(project_id=project.id).first()
+    s1_wf_data = workflows_by_stage.get(1, {})
+    if s1_record:
+        for col in ('project_team', 'problem_5w2h', 'current_performance', 'justification', 'emergency_response', 'theme_target_schedule'):
+            val = getattr(s1_record, col, None)
+            if val is not None and (col not in s1_wf_data or not s1_wf_data[col]):
+                s1_wf_data[col] = val
+        if 'problem_5w2h' in s1_wf_data and 'background_5w2h' not in s1_wf_data:
+            s1_wf_data['background_5w2h'] = s1_wf_data['problem_5w2h']
+        if 'project_team' in s1_wf_data and 'team_members' not in s1_wf_data:
+            s1_wf_data['team_members'] = s1_wf_data['project_team']
+        workflows_by_stage[1] = s1_wf_data
+
+    # 2. Merge Stage 2
     s2_record = Stage2ObservationDataCollection.query.filter_by(project_id=project.id).first()
     s2_wf_data = workflows_by_stage.get(2, {})
     if s2_record:
@@ -2186,7 +2329,7 @@ def get_project_details(id_or_uid):
                         s2_wf_data['standard_verification'][k] = v
         for col in ('containment_actions', 'data_collection_plan', 'gemba_observations'):
             val = getattr(s2_record, col, None)
-            if val and col not in s2_wf_data:
+            if val and (col not in s2_wf_data or not s2_wf_data[col]):
                 s2_wf_data[col] = val
         workflows_by_stage[2] = s2_wf_data
     elif 2 in workflows_by_stage and 'interim_verification' in workflows_by_stage[2] and 'standard_verification' not in workflows_by_stage[2]:
@@ -2206,6 +2349,109 @@ def get_project_details(id_or_uid):
                     sv_map[f'{std_k}_dev'] = True
                     if not sv_map.get(f'{std_k}_follow'):
                         sv_map[f'{std_k}_follow'] = False
+
+    # 3. Merge Stage 3
+    s3_record = Stage3CauseIdentification.query.filter_by(project_id=project.id).first()
+    s3_wf_data = workflows_by_stage.get(3, {})
+    if s3_record:
+        for col in ('brainstorming_ideas', 'cause_and_effect', 'stratification_data', 'shortlisted_causes'):
+            val = getattr(s3_record, col, None)
+            if val is not None and (col not in s3_wf_data or not s3_wf_data[col]):
+                s3_wf_data[col] = val
+        if 'brainstorming_ideas' in s3_wf_data and 'brainstorming' not in s3_wf_data:
+            s3_wf_data['brainstorming'] = s3_wf_data['brainstorming_ideas']
+        elif 'brainstorming' in s3_wf_data and 'brainstorming_ideas' not in s3_wf_data:
+            s3_wf_data['brainstorming_ideas'] = s3_wf_data['brainstorming']
+        if 'cause_and_effect' in s3_wf_data and 'fishbone_l2' not in s3_wf_data:
+            s3_wf_data['fishbone_l2'] = s3_wf_data['cause_and_effect']
+            if 'fishbone_l1' not in s3_wf_data:
+                s3_wf_data['fishbone_l1'] = s3_wf_data['cause_and_effect']
+        if 'shortlisted_causes' in s3_wf_data and 'cause_register' not in s3_wf_data:
+            s3_wf_data['cause_register'] = s3_wf_data['shortlisted_causes']
+        workflows_by_stage[3] = s3_wf_data
+
+    # 4. Merge Stage 4
+    s4_record = Stage4RootCauseAnalysisVerification.query.filter_by(project_id=project.id).first()
+    s4_wf_data = workflows_by_stage.get(4, {})
+    if s4_record:
+        for col in ('five_why_analysis', 'root_cause_verification', 'escape_point_analysis', 'statistical_validation'):
+            val = getattr(s4_record, col, None)
+            if val is not None and (col not in s4_wf_data or not s4_wf_data[col]):
+                s4_wf_data[col] = val
+        if 'five_why_analysis' in s4_wf_data and 'why_why_analysis' not in s4_wf_data:
+            s4_wf_data['why_why_analysis'] = s4_wf_data['five_why_analysis']
+        if 'root_cause_verification' in s4_wf_data and 'root_cause_register' not in s4_wf_data:
+            s4_wf_data['root_cause_register'] = s4_wf_data['root_cause_verification']
+        workflows_by_stage[4] = s4_wf_data
+
+    # 5. Merge Stage 5
+    s5_record = Stage5CountermeasurePlanningSolutionDevelopment.query.filter_by(project_id=project.id).first()
+    s5_wf_data = workflows_by_stage.get(5, {})
+    if s5_record:
+        for col in ('proposed_countermeasures', 'solution_evaluation_matrix', 'risk_assessment_fmea', 'action_plan_5w1h'):
+            val = getattr(s5_record, col, None)
+            if val is not None and (col not in s5_wf_data or not s5_wf_data[col]):
+                s5_wf_data[col] = val
+        if 'proposed_countermeasures' in s5_wf_data and 'root_cause_mapping' not in s5_wf_data:
+            s5_wf_data['root_cause_mapping'] = s5_wf_data['proposed_countermeasures']
+        if 'solution_evaluation_matrix' in s5_wf_data and 'solution_evaluation' not in s5_wf_data:
+            s5_wf_data['solution_evaluation'] = s5_wf_data['solution_evaluation_matrix']
+        if 'risk_assessment_fmea' in s5_wf_data and 'side_effect_analysis' not in s5_wf_data:
+            s5_wf_data['side_effect_analysis'] = s5_wf_data['risk_assessment_fmea']
+        if 'action_plan_5w1h' in s5_wf_data and 'action_plan_3w1h' not in s5_wf_data:
+            s5_wf_data['action_plan_3w1h'] = s5_wf_data['action_plan_5w1h']
+        workflows_by_stage[5] = s5_wf_data
+
+    # 6. Merge Stage 6
+    s6_record = Stage6ImplementationChangeManagement.query.filter_by(project_id=project.id).first()
+    s6_wf_data = workflows_by_stage.get(6, {})
+    if s6_record:
+        for col in ('pilot_execution', 'full_scale_implementation', 'training_and_sop', 'change_management_log'):
+            val = getattr(s6_record, col, None)
+            if val is not None and (col not in s6_wf_data or not s6_wf_data[col]):
+                s6_wf_data[col] = val
+        if 'training_and_sop' in s6_wf_data and 'training_competence' not in s6_wf_data:
+            s6_wf_data['training_competence'] = s6_wf_data['training_and_sop']
+        if 'change_management_log' in s6_wf_data and 'change_management' not in s6_wf_data:
+            s6_wf_data['change_management'] = s6_wf_data['change_management_log']
+        workflows_by_stage[6] = s6_wf_data
+
+    # 7. Merge Stage 7
+    s7_record = Stage7PerformanceVerificationBenefitsRealization.query.filter_by(project_id=project.id).first()
+    s7_wf_data = workflows_by_stage.get(7, {})
+    if s7_record:
+        for col in ('before_after_comparison', 'tangible_benefits', 'intangible_benefits', 'sustainability_checks'):
+            val = getattr(s7_record, col, None)
+            if val is not None and (col not in s7_wf_data or not s7_wf_data[col]):
+                s7_wf_data[col] = val
+        if 'tangible_benefits' in s7_wf_data and 'tangible_intangible_benefits' not in s7_wf_data:
+            s7_wf_data['tangible_intangible_benefits'] = s7_wf_data['tangible_benefits']
+        if 'sustainability_checks' in s7_wf_data and 'process_sustainability' not in s7_wf_data:
+            s7_wf_data['process_sustainability'] = s7_wf_data['sustainability_checks']
+        workflows_by_stage[7] = s7_wf_data
+
+    # 8. Merge Stage 8
+    s8_record = Stage8StandardizationKnowledgeSharingProjectClosure.query.filter_by(project_id=project.id).first()
+    s8_std = Stage8Standardization.query.filter_by(project_id=project.id).first()
+    s8_wf_data = workflows_by_stage.get(8, {})
+    if s8_record:
+        for col in ('sop_standardization', 'horizontal_deployment', 'lessons_learned', 'team_recognition'):
+            val = getattr(s8_record, col, None)
+            if val is not None and (col not in s8_wf_data or not s8_wf_data[col]):
+                s8_wf_data[col] = val
+    if s8_std:
+        for col in ('standardization', 'training_adoption', 'horizontal_deployment', 'lessons_learned', 'benefits_summary', 'remaining_opportunities', 'knowledge_repository', 'team_recognition', 'project_closure'):
+            val = getattr(s8_std, col, None)
+            if val is not None and (col not in s8_wf_data or not s8_wf_data[col]):
+                s8_wf_data[col] = val
+    if 'sop_standardization' in s8_wf_data and 'standardization' not in s8_wf_data:
+        s8_wf_data['standardization'] = s8_wf_data['sop_standardization']
+    workflows_by_stage[8] = s8_wf_data
+
+    # Ensure all 8 stages are present in workflows map
+    for stg_i in range(1, 9):
+        if stg_i not in workflows_by_stage:
+            workflows_by_stage[stg_i] = {}
 
     serialized_workflows = [{"stage_id": stg_id, "data": stg_data} for stg_id, stg_data in sorted(workflows_by_stage.items())]
 
@@ -2273,8 +2519,14 @@ def get_project_details(id_or_uid):
             "username": db.session.get(User, m.user_id).username if db.session.get(User, m.user_id) else "Member",
             "full_name": db.session.get(User, m.user_id).full_name if db.session.get(User, m.user_id) else "Member"
         } for m in ProjectMember.query.filter_by(project_id=project.id).all()],
-        "stage1_data": stage1_workflow.data if stage1_workflow else {},
+        "stage1_data": workflows_by_stage.get(1, {}),
         "stage2_data": workflows_by_stage.get(2, {}),
+        "stage3_data": workflows_by_stage.get(3, {}),
+        "stage4_data": workflows_by_stage.get(4, {}),
+        "stage5_data": workflows_by_stage.get(5, {}),
+        "stage6_data": workflows_by_stage.get(6, {}),
+        "stage7_data": workflows_by_stage.get(7, {}),
+        "stage8_data": workflows_by_stage.get(8, {}),
         "workflows": serialized_workflows,
         "stages": [{
             "stage_number": s.stage_number,
@@ -2417,7 +2669,7 @@ def get_project_stage_details(id, stage_num):
     from app.infrastructure.database.models.models import (
         Stage1ProblemDefinitionProjectInitiation, Stage2ObservationDataCollection, Stage3CauseIdentification,
         Stage4RootCauseAnalysisVerification, Stage5CountermeasurePlanningSolutionDevelopment, Stage6ImplementationChangeManagement,
-        Stage7PerformanceVerificationBenefitsRealization, Stage8StandardizationKnowledgeSharingProjectClosure
+        Stage7PerformanceVerificationBenefitsRealization, Stage8StandardizationKnowledgeSharingProjectClosure, Stage8Standardization
     )
 
     stage_models = {
@@ -2447,6 +2699,56 @@ def get_project_stage_details(id, stage_num):
             if isinstance(v, datetime):
                 data[k] = v.isoformat() + "Z"
 
+    if stage_num == 8:
+        s8_std = Stage8Standardization.query.filter_by(project_id=id).first()
+        if s8_std:
+            for c in s8_std.__table__.columns:
+                if c.name not in ('id', 'project_id', 'org_id'):
+                    val = getattr(s8_std, c.name)
+                    if val is not None and (c.name not in data or not data[c.name]):
+                        data[c.name] = val
+
+    # Merge ProjectWorkflow data as enrichment or fallback
+    wf = ProjectWorkflow.query.filter_by(project_id=id, stage_id=stage_num).first()
+    if wf and wf.data and isinstance(wf.data, dict):
+        for k, v in wf.data.items():
+            if k not in data or data[k] is None or data[k] == [] or data[k] == {}:
+                data[k] = v
+
+    # Ensure aliases are populated in both directions
+    if data.get('brainstorming_ideas') and not data.get('brainstorming'): data['brainstorming'] = data['brainstorming_ideas']
+    if data.get('brainstorming') and not data.get('brainstorming_ideas'): data['brainstorming_ideas'] = data['brainstorming']
+    if data.get('cause_and_effect') and not data.get('fishbone_l2'): data['fishbone_l2'] = data['cause_and_effect']
+    if data.get('fishbone_l2') and not data.get('cause_and_effect'): data['cause_and_effect'] = data['fishbone_l2']
+    if data.get('shortlisted_causes') and not data.get('cause_register'): data['cause_register'] = data['shortlisted_causes']
+    if data.get('cause_register') and not data.get('shortlisted_causes'): data['shortlisted_causes'] = data['cause_register']
+    if data.get('five_why_analysis') and not data.get('why_why_analysis'): data['why_why_analysis'] = data['five_why_analysis']
+    if data.get('why_why_analysis') and not data.get('five_why_analysis'): data['five_why_analysis'] = data['why_why_analysis']
+    if data.get('root_cause_verification') and not data.get('verified_causes'): data['verified_causes'] = data['root_cause_verification']
+    if data.get('verified_causes') and not data.get('root_cause_verification'): data['root_cause_verification'] = data['verified_causes']
+    if data.get('proposed_countermeasures') and not data.get('root_cause_mapping'): data['root_cause_mapping'] = data['proposed_countermeasures']
+    if data.get('root_cause_mapping') and not data.get('proposed_countermeasures'): data['proposed_countermeasures'] = data['root_cause_mapping']
+    if data.get('solution_evaluation_matrix') and not data.get('solution_evaluation'): data['solution_evaluation'] = data['solution_evaluation_matrix']
+    if data.get('solution_evaluation') and not data.get('solution_evaluation_matrix'): data['solution_evaluation_matrix'] = data['solution_evaluation']
+    if data.get('risk_assessment_fmea') and not data.get('side_effect_analysis'): data['side_effect_analysis'] = data['risk_assessment_fmea']
+    if data.get('side_effect_analysis') and not data.get('risk_assessment_fmea'): data['risk_assessment_fmea'] = data['side_effect_analysis']
+    if data.get('action_plan_5w1h') and not data.get('action_plan_3w1h'): data['action_plan_3w1h'] = data['action_plan_5w1h']
+    if data.get('action_plan_3w1h') and not data.get('action_plan_5w1h'): data['action_plan_5w1h'] = data['action_plan_3w1h']
+    if data.get('full_scale_implementation') and not data.get('countermeasure_task_assignments'): data['countermeasure_task_assignments'] = data['full_scale_implementation']
+    if data.get('countermeasure_task_assignments') and not data.get('full_scale_implementation'): data['full_scale_implementation'] = data['countermeasure_task_assignments']
+    if data.get('training_and_sop') and not data.get('communication_training'): data['communication_training'] = data['training_and_sop']
+    if data.get('communication_training') and not data.get('training_and_sop'): data['training_and_sop'] = data['communication_training']
+    if data.get('change_management_log') and not data.get('change_management'): data['change_management'] = data['change_management_log']
+    if data.get('change_management') and not data.get('change_management_log'): data['change_management_log'] = data['change_management']
+    if data.get('before_after_comparison') and not data.get('before_vs_after'): data['before_vs_after'] = data['before_after_comparison']
+    if data.get('before_vs_after') and not data.get('before_after_comparison'): data['before_after_comparison'] = data['before_vs_after']
+    if data.get('tangible_benefits') and not data.get('benefit_realization'): data['benefit_realization'] = data['tangible_benefits']
+    if data.get('benefit_realization') and not data.get('tangible_benefits'): data['tangible_benefits'] = data['benefit_realization']
+    if data.get('sustainability_checks') and not data.get('sustainability_check'): data['sustainability_check'] = data['sustainability_checks']
+    if data.get('sustainability_check') and not data.get('sustainability_checks'): data['sustainability_checks'] = data['sustainability_check']
+    if data.get('sop_standardization') and not data.get('standardization'): data['standardization'] = data['sop_standardization']
+    if data.get('standardization') and not data.get('sop_standardization'): data['sop_standardization'] = data['standardization']
+
     return jsonify(data), 200
 
 
@@ -2458,19 +2760,16 @@ def update_project_stage(id, stage_num):
     project = db.session.get(Project, id)
 
     user_is_sa = bool(user and user.role and user.role.name == 'SuperAdmin')
+    user_is_admin = bool(user and user.role and user.role.name in ('Admin', 'SuperAdmin'))
     if not project or (not user_is_sa and project.org_id != user.org_id):
         return jsonify({"msg": "Project not found"}), 404
 
-    if stage_num == 1:
-        if user.role.name not in ('Admin', 'SuperAdmin', 'Team Leader', 'Team Member'):
-            return jsonify({"msg": "Access denied. Only Admin, Team Leader and Team Member can add/edit Stage 1 details."}), 403
-    elif 2 <= stage_num <= 8:
-        if user.role.name not in ('Team Member', 'Team Leader'):
-            return jsonify({"msg": f"Access denied. Only Team Members and Leaders can add/edit Stage {stage_num} details."}), 403
+    if not user_is_admin and user.role.name not in ('Team Member', 'Team Leader', 'Facilitator'):
+        return jsonify({"msg": f"Access denied. Only Team Members and Leaders can add/edit Stage {stage_num} details."}), 403
 
     # RBAC: TL, Admin, Facilitator or assigned members
     is_member = ProjectMember.query.filter_by(project_id=id, user_id=user_id).first()
-    is_admin_or_global_role = user and user.role and user.role.name in ['Admin', 'Team Leader', 'Team Member', 'Facilitator']
+    is_admin_or_global_role = user and user.role and user.role.name in ['Admin', 'SuperAdmin', 'Team Leader', 'Team Member', 'Facilitator']
     is_project_owner = project.creator_id == user_id
     is_project_leader = project.team_leader_id == user_id
     is_project_facilitator = project.facilitator_id == user_id
@@ -2495,7 +2794,7 @@ def update_project_stage(id, stage_num):
     if not model:
         return jsonify({"msg": "Invalid stage number"}), 400
 
-    data = request.get_json()
+    data = request.get_json() or {}
     stage_data = model.query.filter_by(project_id=id).first()
 
     if not stage_data:
@@ -2503,10 +2802,47 @@ def update_project_stage(id, stage_num):
         stage_data = model(project_id=id, org_id=user.org_id)
         db.session.add(stage_data)
 
+    # Alias mapping for incoming data keys to column names
+    col_aliases = {
+        'brainstorming': 'brainstorming_ideas',
+        'fishbone_l2': 'cause_and_effect',
+        'cause_register': 'shortlisted_causes',
+        'why_why_analysis': 'five_why_analysis',
+        'verified_causes': 'root_cause_verification',
+        'root_cause_mapping': 'proposed_countermeasures',
+        'solution_evaluation': 'solution_evaluation_matrix',
+        'side_effect_analysis': 'risk_assessment_fmea',
+        'action_plan_3w1h': 'action_plan_5w1h',
+        'countermeasure_task_assignments': 'full_scale_implementation',
+        'communication_training': 'training_and_sop',
+        'change_management': 'change_management_log',
+        'before_vs_after': 'before_after_comparison',
+        'benefit_realization': 'tangible_benefits',
+        'sustainability_check': 'sustainability_checks',
+        'standardization': 'sop_standardization'
+    }
+
     # Dynamically update fields
     for key, value in data.items():
-        if hasattr(stage_data, key) and key not in ['id', 'project_id', 'org_id']:
+        target_col = col_aliases.get(key, key)
+        if hasattr(stage_data, target_col) and target_col not in ['id', 'project_id', 'org_id']:
+            setattr(stage_data, target_col, value)
+        elif hasattr(stage_data, key) and key not in ['id', 'project_id', 'org_id']:
             setattr(stage_data, key, value)
+
+    # Also keep ProjectWorkflow in sync
+    workflow = ProjectWorkflow.query.filter_by(project_id=id, stage_id=stage_num).first()
+    if not workflow:
+        workflow = ProjectWorkflow(project_id=id, org_id=user.org_id, stage_id=stage_num, data={})
+        db.session.add(workflow)
+    existing_wf = dict(workflow.data or {})
+    for k, v in data.items():
+        if k not in ('action', 'id', 'project_id', 'org_id'):
+            existing_wf[k] = v
+    workflow.data = existing_wf
+    flag_modified(workflow, 'data')
+    workflow.updated_by = user_id
+    workflow.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
     # Update tracker if stage is being completed
     if data.get('action') == 'submit':
