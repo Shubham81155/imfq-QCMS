@@ -542,19 +542,29 @@ const Stage8 = {
         const s7 = wf.find(w => w.stage_id === 7)?.data || projectData.stage7_data || {};
 
         ['std', 'training', 'deploy', 'lesson', 'benefit', 'opp', 'repo', 'team'].forEach(key => {
-            let arr = d[this.getMap(key)] || [];
-            if (!arr || !arr.length) {
+            let arr = d[this.getMap(key)];
+            if (!arr || (Array.isArray(arr) && !arr.length)) {
                 if (key === 'std') arr = d.sop_standardization || d.sop || [];
                 else if (key === 'deploy') arr = d.horizontal_deployment || [];
                 else if (key === 'lesson') arr = d.lessons_learned || [];
                 else if (key === 'team') arr = d.team_recognition || [];
+            }
+            if (!Array.isArray(arr)) {
+                if (typeof arr === 'string' && arr.trim()) {
+                    arr = [{ [key === 'lesson' ? 'lesson' : 'document']: arr }];
+                } else if (arr && typeof arr === 'object') {
+                    arr = [arr];
+                } else {
+                    arr = [];
+                }
             }
             if (arr && arr.length) {
                 arr.forEach(r => this[`add${this.capitalize(key)}Row`](r));
             } else {
                 // Auto-populate fallbacks from upstream stages if empty
                 if (key === 'std') {
-                    const mapping = s5.root_cause_mapping || [];
+                    const rawMapping = s5.root_cause_mapping || s5.proposed_countermeasures || [];
+                    const mapping = Array.isArray(rawMapping) ? rawMapping : (typeof rawMapping === 'string' && rawMapping ? [{ proposed_solution: rawMapping }] : []);
                     if (mapping.length) {
                         mapping.forEach(m => {
                             this.addStdRow({
@@ -568,13 +578,14 @@ const Stage8 = {
                         this.addStdRow();
                     }
                 } else if (key === 'deploy') {
-                    const actionPlan = s5.action_plan_3w1h || [];
+                    const rawAction = s5.action_plan_3w1h || s5.action_plan_5w1h || [];
+                    const actionPlan = Array.isArray(rawAction) ? rawAction : [];
                     if (actionPlan.length) {
                         actionPlan.forEach(act => {
                             this.addDeployRow({
                                 area_department: "Target Area",
-                                applicability: "Deploy standard: " + act.what,
-                                responsible_person: act.who,
+                                applicability: "Deploy standard: " + (act.what || ''),
+                                responsible_person: act.who || '',
                                 status: "Implemented"
                             });
                         });
@@ -582,21 +593,23 @@ const Stage8 = {
                         this.addDeployRow();
                     }
                 } else if (key === 'lesson') {
-                    const s7Lessons = s7.lessons_implementation || [];
+                    const rawLessons = s7.lessons_implementation || [];
+                    const s7Lessons = Array.isArray(rawLessons) ? rawLessons : (typeof rawLessons === 'string' && rawLessons ? [{ lesson: rawLessons }] : []);
                     if (s7Lessons.length) {
                         s7Lessons.forEach(l => {
                             this.addLessonRow({
                                 stage: l.category || 'Verification',
                                 problem_encountered: 'Process Variation / verification challenges',
-                                solution_applied: l.actionable_insight,
-                                lesson_learned: l.lesson
+                                solution_applied: l.actionable_insight || '',
+                                lesson_learned: l.lesson || ''
                             });
                         });
                     } else {
                         this.addLessonRow();
                     }
                 } else if (key === 'benefit') {
-                    const s7KPIs = s7.kpi_verification || [];
+                    const rawKPIs = s7.kpi_verification || [];
+                    const s7KPIs = Array.isArray(rawKPIs) ? rawKPIs : [];
                     if (s7KPIs.length) {
                         s7KPIs.forEach(k => {
                             this.addBenefitRow({

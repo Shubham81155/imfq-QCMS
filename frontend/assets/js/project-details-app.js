@@ -2613,9 +2613,24 @@ const ProjectApp = {
         const s5 = (workflows.find(w => w.stage_id === 5) || {}).data || {};
         const s6 = (workflows.find(w => w.stage_id === 6) || {}).data || {};
         const s7 = (workflows.find(w => w.stage_id === 7) || {}).data || {};
-        const s8 = (workflows.find(w => w.stage_id === this._stagesCfg.length) || {}).data || {};
+        const s8 = (workflows.find(w => w.stage_id === (this._stagesCfg ? this._stagesCfg.length : 8)) || workflows.find(w => w.stage_id === 8) || {}).data || {};
         const projStatus = (data.status || '').toLowerCase().trim();
         const isProjectClosed = projStatus === 'closed' || projStatus === 'completed' || projStatus === 'archived';
+
+        const formatList = (arr, fn, joiner = ', ', fallback = 'N/A') => {
+            if (!arr) return fallback;
+            if (Array.isArray(arr)) {
+                if (!arr.length) return fallback;
+                const res = arr.map(fn).filter(Boolean).join(joiner);
+                return res || fallback;
+            }
+            if (typeof arr === 'string') return arr.trim() || fallback;
+            if (typeof arr === 'object') {
+                const vals = Object.values(arr).filter(v => typeof v === 'string' || typeof v === 'number');
+                return vals.length ? vals.join(joiner) : fallback;
+            }
+            return String(arr) || fallback;
+        };
 
         container.innerHTML = `
             <div class="ds-card-header d-flex justify-content-between align-items-center mb-3">
@@ -2731,8 +2746,8 @@ const ProjectApp = {
                             </h2>
                             <div id="collapseS4" class="accordion-collapse collapse" data-bs-parent="#execWorkflowAccordion">
                                 <div class="accordion-body text-sm text-secondary">
-                                    <p><strong>Verified Root Causes:</strong> ${s4.root_cause_register?.map(c => c.root_cause).join(', ') || 'N/A'}</p>
-                                    <p><strong>Why-Why Chain:</strong> ${s4.why_why_analysis?.map(w => `${w.cause} -> Why: ${w.why1} -> Root: ${w.root_cause}`).join('; ') || 'N/A'}</p>
+                                    <p><strong>Verified Root Causes:</strong> ${formatList(s4.root_cause_register, c => typeof c === 'string' ? c : (c.root_cause || c.cause || ''))}</p>
+                                    <p><strong>Why-Why Chain:</strong> ${formatList(s4.why_why_analysis, w => typeof w === 'string' ? w : `${w.cause || ''} -> Why: ${w.why1 || ''} -> Root: ${w.root_cause || ''}`, '; ')}</p>
                                 </div>
                             </div>
                         </div>
@@ -2744,8 +2759,8 @@ const ProjectApp = {
                             </h2>
                             <div id="collapseS5" class="accordion-collapse collapse" data-bs-parent="#execWorkflowAccordion">
                                 <div class="accordion-body text-sm text-secondary">
-                                    <p><strong>Hypothesis Statement:</strong> ${s5.hypothesis?.hypothesis_statement || 'N/A'}</p>
-                                    <p><strong>Validation Method:</strong> ${s5.validation_methods?.map(m => m.method_name).join(', ') || 'N/A'}</p>
+                                    <p><strong>Hypothesis Statement:</strong> ${s5.hypothesis?.hypothesis_statement || (typeof s5.hypothesis === 'string' ? s5.hypothesis : 'N/A')}</p>
+                                    <p><strong>Validation Method:</strong> ${formatList(s5.validation_methods, m => typeof m === 'string' ? m : (m.method_name || m.method || ''))}</p>
                                 </div>
                             </div>
                         </div>
@@ -2757,7 +2772,7 @@ const ProjectApp = {
                             </h2>
                             <div id="collapseS6" class="accordion-collapse collapse" data-bs-parent="#execWorkflowAccordion">
                                 <div class="accordion-body text-sm text-secondary">
-                                    <p><strong>Action Executions:</strong> ${s6.countermeasure_execution?.map(a => `${a.action} (${a.status})`).join('; ') || 'No tasks defined'}</p>
+                                    <p><strong>Action Executions:</strong> ${formatList(s6.countermeasure_execution, a => typeof a === 'string' ? a : `${a.action || a.task || ''} (${a.status || 'Pending'})`, '; ', 'No tasks defined')}</p>
                                 </div>
                             </div>
                         </div>
@@ -2769,8 +2784,8 @@ const ProjectApp = {
                             </h2>
                             <div id="collapseS7" class="accordion-collapse collapse" data-bs-parent="#execWorkflowAccordion">
                                 <div class="accordion-body text-sm text-secondary">
-                                    <p><strong>ROI Metrics:</strong> Investment: ₹${s7.roi_validation?.total_investment || 'N/A'} | Annual Savings: ₹${s7.roi_validation?.annual_savings || 'N/A'} | Payback: ${s7.roi_validation?.payback_period || 'N/A'} | ROI: ${s7.roi_validation?.roi_pct || 'N/A'}%</p>
-                                    <p><strong>KPI Benefit Verification:</strong> ${s7.kpi_verification?.map(k => `${k.metric}: Baseline ${k.baseline} -> Actual ${k.actual} (Variance: ${k.variance})`).join('; ') || 'N/A'}</p>
+                                    <p><strong>ROI Metrics:</strong> Investment: ₹${s7.roi_validation?.total_investment ?? 'N/A'} | Annual Savings: ₹${s7.roi_validation?.annual_savings ?? 'N/A'} | Payback: ${s7.roi_validation?.payback_period ?? 'N/A'} | ROI: ${s7.roi_validation?.roi_pct ?? 'N/A'}%</p>
+                                    <p><strong>KPI Benefit Verification:</strong> ${formatList(s7.kpi_verification, k => typeof k === 'string' ? k : `${k.metric || ''}: Baseline ${k.baseline ?? ''} -> Actual ${k.actual ?? ''} (Variance: ${k.variance ?? ''})`, '; ')}</p>
                                 </div>
                             </div>
                         </div>
@@ -2782,9 +2797,9 @@ const ProjectApp = {
                             </h2>
                             <div id="collapseS8" class="accordion-collapse collapse" data-bs-parent="#execWorkflowAccordion">
                                 <div class="accordion-body text-sm text-secondary">
-                                    <p><strong>Linked SOP:</strong> ${s8.sop?.title || 'N/A'} (${s8.sop?.sop_type || 'N/A'})</p>
-                                    <p><strong>Lessons Learned:</strong> ${s8.lessons_learned?.map(l => l.lesson).join(', ') || 'N/A'}</p>
-                                    <p><strong>Training Record Groups:</strong> ${s8.training_adoption?.map(t => `${t.target_group} (${t.adoption_status})`).join('; ') || 'N/A'}</p>
+                                    <p><strong>Linked SOP:</strong> ${s8.sop?.title || (typeof s8.sop === 'string' ? s8.sop : 'N/A')} (${s8.sop?.sop_type || 'N/A'})</p>
+                                    <p><strong>Lessons Learned:</strong> ${formatList(s8.lessons_learned, l => typeof l === 'string' ? l : (l.lesson || l.description || l.title || ''))}</p>
+                                    <p><strong>Training Record Groups:</strong> ${formatList(s8.training_adoption, t => typeof t === 'string' ? t : `${t.target_group || t.group || ''} (${t.adoption_status || t.status || ''})`, '; ')}</p>
                                 </div>
                             </div>
                         </div>
@@ -2806,9 +2821,9 @@ const ProjectApp = {
                                 <hr>
                                 <h6 class="fw-bold text-xs mb-2">Procedure Steps:</h6>
                                 <ol class="text-sm ps-3">
-                                    ${(s8.sop.steps || []).map(s => `<li><strong>${s.step_name}:</strong> ${s.description} (Role: ${s.responsible_role || 'All'})</li>`).join('') || '<li class="text-muted">No steps configured</li>'}
+                                    ${(Array.isArray(s8.sop?.steps) ? s8.sop.steps : []).map(s => typeof s === 'string' ? `<li>${s}</li>` : `<li><strong>${s.step_name || 'Step'}:</strong> ${s.description || ''} (Role: ${s.responsible_role || 'All'})</li>`).join('') || '<li class="text-muted">No steps configured</li>'}
                                 </ol>
-                            </div>
+                            </div>`
                         ` : `
                             <div class="p-4 text-center text-muted border rounded">
                                 <i data-lucide="alert-circle" style="width:36px;height:36px;" class="mb-2"></i>
