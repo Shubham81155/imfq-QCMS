@@ -451,13 +451,17 @@
                     const res = await fetch(url);
                     if (!res.ok) return;
                     const data = await res.json();
-                    const options = data.login_options || [];
+                    let options = data.login_options || [];
                     const labels  = data.field_labels  || {};
                     const ssoConfig = data.sso_config || {};
 
+                    if (!options.includes('phone') && !options.includes('phone_number')) {
+                        options.push('phone');
+                    }
+
                     const displayLabels = options.map(k => labels[k] || FIELD_LABELS[k] || k.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase()));
-                    const labelText  = displayLabels.join(' / ');
-                    const placeholder = 'Enter your ' + displayLabels.join(' or ');
+                    const labelText  = displayLabels.length === 2 ? displayLabels.join(' or ') : displayLabels.join(' / ');
+                    const placeholder = 'Enter your ' + (displayLabels.length === 2 ? displayLabels.join(' or ') : displayLabels.join(' / '));
 
                     if (!window.getLoginMode || window.getLoginMode() !== 'otp') {
                         const labelEl = document.getElementById('identifierLabelText');
