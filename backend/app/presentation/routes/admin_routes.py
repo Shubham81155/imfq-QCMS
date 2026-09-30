@@ -23,6 +23,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from app.utils.avatar_utils import get_profile_picture_url
 from app.domain.services.feature_engine import feature_module_required
 from functools import wraps
+from app.shared.validation import generate_temp_password
 
 admin_bp = Blueprint('admin', __name__)
 
@@ -511,8 +512,12 @@ def create_user():
             "error_code": "USER_LIMIT_REACHED"
         }), 403
 
-    import secrets
-    password = data.get('password') or os.getenv('DEFAULT_USER_PASSWORD') or os.getenv('DEFAULT_TEMP_PASSWORD') or 'Welcome@123'
+    from app.shared.validation import generate_temp_password
+    raw_password = (data.get('password') or '').strip()
+    if not raw_password or raw_password == 'Welcome@123':
+        password = generate_temp_password(8)
+    else:
+        password = raw_password
     
     plant_input = data.get('plant_id') or data.get('plant_location') or data.get('plant')
     user_plant_id = None
@@ -566,8 +571,10 @@ def create_user():
             "id": new_user.id,
             "username": new_user.username,
             "phone": new_user.phone or "",
-            "email": new_user.email or ""
-        }
+            "email": new_user.email or "",
+            "temp_password": password
+        },
+        "temp_password": password
     }), 201
 
 @admin_bp.route('/users/custom-fields', methods=['GET'])
@@ -837,7 +844,8 @@ def download_users_template():
     writer = csv.writer(output)
     writer.writerow(headers)
     
-    default_sample_pw = os.getenv('DEFAULT_TEMP_PASSWORD') or os.getenv('DEFAULT_USER_PASSWORD') or 'Welcome@123'
+    from app.shared.validation import generate_temp_password
+    default_sample_pw = generate_temp_password(8)
     sample_row = ['john_doe', '9876543210', 'john.doe@example.com', 'Team Member', 'Unit 1 - Pune', 'Manufacturing', 'John Doe', default_sample_pw]
     sample_row += [''] * len(custom_headers)
     writer.writerow(sample_row)
@@ -1060,7 +1068,11 @@ def bulk_upload_users():
         plant_raw     = (row.get('plant_location') or row.get('plant') or row.get('location') or row.get('Plant') or row.get('Location') or row.get('Plant  / Location') or '').strip()
         dept_raw      = (row.get('department') or row.get('dept') or row.get('Department') or row.get('Dept') or row.get('Department Name') or '').strip()
         full_name     = (row.get('full_name') or row.get('Full Name') or '').strip() or username
-        password      = (row.get('password') or row.get('Password') or '').strip() or os.getenv('DEFAULT_USER_PASSWORD') or os.getenv('DEFAULT_TEMP_PASSWORD') or 'Welcome@123'
+        raw_row_pw    = (row.get('password') or row.get('Password') or '').strip()
+        if not raw_row_pw or raw_row_pw == 'Welcome@123':
+            password  = generate_temp_password(8)
+        else:
+            password  = raw_row_pw
 
         def reject(reason):
             nonlocal rejected_count
@@ -1501,10 +1513,9 @@ def regenerate_credentials(user_id):
         Role.name != 'SuperAdmin'
     ).first_or_404()
     
-    # Generate new random password
-    import string
-    import random
-    new_password = ''.join(random.choices(string.ascii_letters + string.digits, k=10))
+    # Generate new random 8-character password with numeric and special characters
+    from app.shared.validation import generate_temp_password
+    new_password = generate_temp_password(8)
     
     try:
         user.hashed_password = bcrypt.generate_password_hash(new_password).decode('utf-8')
@@ -1862,11 +1873,11 @@ def bulk_user_action():
         return jsonify({"status": "success", "message": f"Successfully deactivated {success_count} user(s).", "affected": success_count, "skipped": skipped_count}), 200
 
     elif action == 'resend_credentials':
-        import string, random
+        from app.shared.validation import generate_temp_password
         async_resend_creds = []
         for u in targets:
             try:
-                new_pass = ''.join(random.choices(string.ascii_letters + string.digits, k=10))
+                new_pass = generate_temp_password(8)
                 u.hashed_password = bcrypt.generate_password_hash(new_pass).decode('utf-8')
                 u.is_temp_password = True
                 async_resend_creds.append({'user_id': u.id, 'temp_password': new_pass})
@@ -3098,6 +3109,21 @@ def get_pending_payg_bill():
     current_user = db.session.get(User, current_user_id)
     if not current_user or not current_user.org_id:
         return jsonify({"has_pending": False}), 200
+
+    from app.infrastructure.database.models.billing import OfflinePaymentProof
+    pending_proof = OfflinePaymentProof.query.filter_by(org_id=current_user.org_id, status='Pending Verification')\
+        .order_by(OfflinePaymentProof.created_at.desc()).first()
+    if pending_proof:
+        return jsonify({
+            "has_pending": False,
+            "proof_pending": True,
+            "proof": {
+                "transaction_id": pending_proof.transaction_id,
+                "plan_name": pending_proof.plan_name,
+                "amount": float(pending_proof.amount or 0.0),
+                "created_at": pending_proof.created_at.strftime('%Y-%m-%d %H:%M') if pending_proof.created_at else ''
+            }
+        }), 200
 
     inv = SubscriptionInvoice.query.filter_by(org_id=current_user.org_id)\
         .filter(SubscriptionInvoice.invoice_status.in_(['Sent', 'SENT', 'Overdue', 'OVERDUE', 'Issued']))\

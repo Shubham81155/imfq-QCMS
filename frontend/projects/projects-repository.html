@@ -83,7 +83,7 @@
                     <div class="h-stack justify-content-between w-100">
                         <div class="v-stack">
                             <h1 class="ds-title mb-0">Project Repository</h1>
-                            <p class="ds-text-secondary mb-0">Real-time database of all OctaQube initiatives. Monitor progress, efficiency, and identify inactive projects across the organization.</p>
+                            <p class="ds-text-secondary mb-0">Real-time database of all OctaQube initiatives. Monitor progress and identify inactive projects across the organization.</p>
                         </div>
                         <button class="ds-btn ds-btn-primary ds-btn-sm" id="initProjectBtn" 
                             onclick="repoUI.openInitModal()"
@@ -198,7 +198,6 @@
                                         <th>Project Identity</th>
                                         <th>Team Leader</th>
                                         <th>Current progress</th>
-                                        <th>Efficiency</th>
                                         <th>Last Update</th>
                                         <th class="text-end">Actions</th>
                                     </tr>
@@ -208,7 +207,6 @@
                                         <td><div class="skeleton-text skeleton" style="width:180px;"></div></td>
                                         <td><div class="skeleton-text skeleton" style="width:120px;"></div></td>
                                         <td><div class="skeleton-text skeleton" style="width:150px;"></div></td>
-                                        <td><div class="skeleton-text skeleton" style="width:100px;"></div></td>
                                         <td><div class="skeleton-text skeleton" style="width:110px;"></div></td>
                                         <td class="text-end"><div class="skeleton-badge skeleton ml-auto" style="width:60px;"></div></td>
                                     </tr>
@@ -216,7 +214,6 @@
                                         <td><div class="skeleton-text skeleton" style="width:180px;"></div></td>
                                         <td><div class="skeleton-text skeleton" style="width:120px;"></div></td>
                                         <td><div class="skeleton-text skeleton" style="width:150px;"></div></td>
-                                        <td><div class="skeleton-text skeleton" style="width:100px;"></div></td>
                                         <td><div class="skeleton-text skeleton" style="width:110px;"></div></td>
                                         <td class="text-end"><div class="skeleton-badge skeleton ml-auto" style="width:60px;"></div></td>
                                     </tr>
@@ -588,7 +585,7 @@
 
 
     <script src="/assets/dist/bootstrap.bundle.min.js"></script>
-    <script src="/assets/dist/core-bundle.2abaccd7.min.js"></script>
+    <script src="/assets/dist/core-bundle.4fed00f2.min.js"></script>
     <script>
     function esc(str) {
         if (!str) return '';
@@ -2173,7 +2170,7 @@
             } catch (e) {
                 OctaQube.toast('Failed to sync repository data', 'danger');
                 document.getElementById('repoTableBody').innerHTML = 
-                    `<tr><td colspan="6">${OctaQube.emptyState('System Error', e.message, 'alert-circle')}</td></tr>`;
+                    `<tr><td colspan="5">${OctaQube.emptyState('System Error', e.message, 'alert-circle')}</td></tr>`;
                 if (window.lucide) lucide.createIcons();
             }
         },
@@ -2250,7 +2247,7 @@
             if (!this.data || !this.data.length) {
                 if (hasActiveFilters) {
                     const safeQuery = OctaQube.escapeHtml(query);
-                    body.innerHTML = `<tr><td colspan="6" class="text-center py-5">
+                    body.innerHTML = `<tr><td colspan="5" class="text-center py-5">
                         ${OctaQube.emptyState('No Matching Projects', query ? `No projects match "${safeQuery}" with current filters.` : 'No projects match your selected filter criteria.', 'layers')}
                         <div class="mt-3">
                             <button class="ds-btn ds-btn-ghost ds-btn-sm" onclick="repoUI.resetFilters()">
@@ -2259,7 +2256,7 @@
                         </div>
                     </td></tr>`;
                 } else {
-                    body.innerHTML = `<tr><td colspan="6" class="text-center py-5">
+                    body.innerHTML = `<tr><td colspan="5" class="text-center py-5">
                         ${OctaQube.emptyState('Archive Empty', 'No projects found in the repository.', 'layers')}
                     </td></tr>`;
                 }
@@ -2290,12 +2287,6 @@
                     </td>
                     <td style="width:180px;">
                         ${OctaQube.projectProgress(p.current_stage || 1, 8, p.progress_pct ?? p.progress)}
-                    </td>
-                    <td>
-                        <div class="text-sm fw-bold ${p.efficiency > 0 ? 'text-green' : 'text-muted'}">${p.efficiency}% Improvement</div>
-                        <div class="efficiency-progress">
-                            <div class="efficiency-fill" style="width: ${Math.min(p.efficiency, 100)}%"></div>
-                        </div>
                     </td>
                     <td>
                         <div class="text-sm fw-medium">${OctaQube.formatRelative(p.last_updated)}</div>

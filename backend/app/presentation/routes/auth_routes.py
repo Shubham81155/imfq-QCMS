@@ -777,8 +777,13 @@ def register():
     if not role:
         return jsonify({"msg": "Invalid role"}), 400
         
-    # Temporary password logic (Mapped to .env DEFAULT_TEMP_PASSWORD / DEFAULT_USER_PASSWORD)
-    temp_password = data.get('password') or os.getenv('DEFAULT_TEMP_PASSWORD') or os.getenv('DEFAULT_USER_PASSWORD') or 'Welcome@123'
+    # Temporary password logic: random 8-char password with numeric & special characters
+    from app.shared.validation import generate_temp_password
+    raw_pw = (data.get('password') or '').strip()
+    if not raw_pw or raw_pw == 'Welcome@123':
+        temp_password = generate_temp_password(8)
+    else:
+        temp_password = raw_pw
     hashed_pw = bcrypt.generate_password_hash(temp_password).decode('utf-8')
     
     dept_id = None
@@ -1155,6 +1160,22 @@ def login():
     if not user.is_verified and not user.is_temp_password:
         return jsonify({"msg": "Please verify your email address before logging in"}), 403
 
+    # Clear lockout on successful authentication
+    try:
+        from app.presentation.middleware.security import clear_login_lockout
+        client_ip = (request.headers.get('X-Forwarded-For', '') or '').split(',')[0].strip() or request.remote_addr or ''
+        clear_login_lockout(identifier)
+        if client_ip:
+            clear_login_lockout(client_ip)
+    except Exception:
+        pass
+
+    remember_me = bool(data.get('remember_me') or data.get('rememberMe'))
+    return _create_login_session_and_response(user, remember_me=remember_me)
+
+
+def _create_login_session_and_response(user, remember_me=False):
+    """Shared login session establishment and response generator for password and OTP authentication."""
     # If the user's organization has been deleted (moved to Recycle Bin or permanently removed),
     # return a generic invalid credentials message — do not reveal the org is deleted.
     role_name_chk = (user.role.name if user.role else '').strip().lower()
@@ -1178,30 +1199,17 @@ def login():
                 "error_code": "MAINTENANCE_MODE",
                 "code": "MAINTENANCE_MODE"
             }), 403
-        
-    # Clear lockout on successful authentication
-    try:
-        from app.presentation.middleware.security import clear_login_lockout
-        client_ip = (request.headers.get('X-Forwarded-For', '') or '').split(',')[0].strip() or request.remote_addr or ''
-        clear_login_lockout(identifier)
-        if client_ip:
-            clear_login_lockout(client_ip)
-    except Exception:
-        pass
 
     # Generate session ID first so it can be bound to JWT claims
     session_id = f"SESS-{int(datetime.now(timezone.utc).replace(tzinfo=None).timestamp())}-{user.id}"
 
     # Scoped access token
-    # Include sa_sub_role in claims so the frontend can enforce sub-role
-    # restrictions immediately without an extra API call.
     from app.presentation.middleware.middleware import _is_super_admin, _get_sa_sub_role
     role_name = user.role.name if user.role else 'SuperAdmin'
     sa_sub_role = None
     if _is_super_admin(user):
         sa_sub_role = _get_sa_sub_role(user)
 
-    remember_me = bool(data.get('remember_me') or data.get('rememberMe'))
     token_expiry = timedelta(days=30) if remember_me else timedelta(days=1)
 
     access_token = create_access_token(
@@ -1211,7 +1219,7 @@ def login():
             "org_id": user.org_id,
             "role": role_name,
             "dept_id": user.department_id,
-            "sa_sub_role": sa_sub_role,   # None for non-SuperAdmin users
+            "sa_sub_role": sa_sub_role,
         },
         expires_delta=token_expiry
     )
@@ -1328,6 +1336,236 @@ def login():
     })
     set_access_cookies(resp, access_token)
     return resp, 200
+
+
+@auth_bp.route('/login-otp/send', methods=['POST'])
+def send_login_otp():
+    """
+    Initiate Login with OTP for Email or Phone number.
+    - Validates if the user exists in the database.
+    - If email: verifies email exists, dispatches OTP via mapped Login OTP Email template.
+    - If phone: verifies phone exists, dispatches OTP via phone_otp_verification SMS template.
+    """
+    data = request.get_json() or {}
+    identifier = (data.get('identifier') or data.get('email') or data.get('phone') or data.get('username') or '').strip()
+
+    if not identifier:
+        return jsonify({"status": "error", "msg": "Please enter your Email Address or Phone Number."}), 400
+
+    from sqlalchemy import func, or_
+    clean_digits = re.sub(r'\D', '', identifier)
+    user = None
+    channel = None
+
+    if '@' in identifier:
+        channel = "email"
+        user = User.query.filter(func.lower(User.email) == identifier.lower()).first()
+        if not user:
+            return jsonify({
+                "status": "error",
+                "msg": "Please enter a valid registered email address. No account found.",
+                "message": "Please enter a valid registered email address. No account found."
+            }), 404
+    elif clean_digits and len(clean_digits) >= 10:
+        channel = "phone"
+        last_10 = clean_digits[-10:]
+        user = User.query.filter(
+            or_(
+                User.phone == identifier,
+                User.phone == f"+91{last_10}",
+                User.phone == last_10,
+                User.phone.like(f"%{last_10}")
+            )
+        ).first()
+        if not user:
+            return jsonify({
+                "status": "error",
+                "msg": "Please enter a valid registered phone number. No account found.",
+                "message": "Please enter a valid registered phone number. No account found."
+            }), 404
+    else:
+        # Check by username if entered
+        user = User.query.filter(func.lower(User.username) == identifier.lower()).first()
+        if user:
+            channel = "email" if user.email else "phone"
+        if not user:
+            return jsonify({
+                "status": "error",
+                "msg": "Please enter a valid registered email address or 10-digit phone number.",
+                "message": "Please enter a valid registered email address or 10-digit phone number."
+            }), 404
+
+    if not user.is_active:
+        return jsonify({
+            "status": "error",
+            "msg": "This account is currently deactivated. Please contact your organization administrator."
+        }), 403
+
+    # Lockout check
+    try:
+        from app.presentation.middleware.security import is_login_locked, get_lockout_info
+        client_ip = (request.headers.get('X-Forwarded-For', '') or '').split(',')[0].strip() or request.remote_addr or ''
+        id_info = get_lockout_info(identifier)
+        if id_info.get('is_locked'):
+            return jsonify({
+                "status": "error",
+                "msg": "Account is temporarily locked due to too many failed attempts.",
+                "error_code": "ACCOUNT_LOCKED",
+                "remaining_seconds": id_info.get('remaining_seconds', 900)
+            }), 429
+    except Exception:
+        pass
+
+    # Cooldown check safely
+    cooldown_key = f"otp_cooldown:login_otp:{user.id}"
+    try:
+        from app.infrastructure.cache.redis_adapter import cache
+        if cache.get(cooldown_key):
+            return jsonify({
+                "status": "error",
+                "msg": "Please wait 60 seconds before requesting a new login verification code.",
+                "code": "OTP_COOLDOWN_ACTIVE"
+            }), 429
+    except Exception:
+        pass
+
+    # Generate 6-digit cryptographically secure OTP
+    otp = f"{secrets.randbelow(1_000_000):06d}"
+    user.otp_token = otp
+    user.otp_expiry = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=10)
+    db.session.add(user)
+
+    try:
+        from app.infrastructure.cache.redis_adapter import cache
+        cache.setex(cooldown_key, 60, "1")
+        cache.delete(f"otp_fails:login_otp:{user.id}")
+    except Exception:
+        pass
+    db.session.commit()
+
+    masked_destination = ""
+    if channel == "email" or (user.email and not user.phone):
+        try:
+            EmailUtils.send_login_otp_email(user, otp, is_async=True)
+        except Exception as ex:
+            print(f"[AUTH Login OTP] Email dispatch error: {ex}")
+        masked_destination = _mask_email(user.email)
+        dest_msg = f"Verification OTP code sent to your registered email ({masked_destination})."
+        channel = "email"
+    else:
+        try:
+            dispatch_phone_otp_sms(user.phone, otp, template_key='phone_otp_verification', user=user, is_async=True)
+        except Exception as ex:
+            print(f"[AUTH Login OTP] SMS dispatch error: {ex}")
+        masked_destination = _mask_phone(user.phone)
+        dest_msg = f"Verification OTP code sent to your registered phone ({masked_destination})."
+        channel = "phone"
+
+    return jsonify({
+        "status": "success",
+        "msg": dest_msg,
+        "channel": channel,
+        "masked_destination": masked_destination,
+        "expires_in": 600
+    }), 200
+
+
+@auth_bp.route('/login-otp/verify', methods=['POST'])
+def verify_login_otp():
+    """
+    Verify Login OTP and issue authenticated JWT session.
+    """
+    data = request.get_json() or {}
+    identifier = (data.get('identifier') or data.get('email') or data.get('phone') or data.get('username') or '').strip()
+    otp = str(data.get('otp') or '').strip()
+    remember_me = bool(data.get('remember_me') or data.get('rememberMe'))
+
+    if not identifier or not otp:
+        return jsonify({"status": "error", "msg": "Identifier and 6-digit OTP verification code are required."}), 400
+
+    from sqlalchemy import func, or_
+    clean_digits = re.sub(r'\D', '', identifier)
+    user = None
+
+    if '@' in identifier:
+        user = User.query.filter(func.lower(User.email) == identifier.lower()).first()
+    elif clean_digits and len(clean_digits) >= 10:
+        last_10 = clean_digits[-10:]
+        user = User.query.filter(
+            or_(
+                User.phone == identifier,
+                User.phone == f"+91{last_10}",
+                User.phone == last_10,
+                User.phone.like(f"%{last_10}")
+            )
+        ).first()
+    else:
+        user = User.query.filter(
+            or_(
+                func.lower(User.username) == identifier.lower(),
+                func.lower(User.email) == identifier.lower()
+            )
+        ).first()
+
+    if not user:
+        return jsonify({"status": "error", "msg": "User account not found."}), 404
+
+    if not user.is_active:
+        return jsonify({"status": "error", "msg": "This account is currently deactivated."}), 403
+
+    fails_key = f"otp_fails:login_otp:{user.id}"
+    try:
+        from app.infrastructure.cache.redis_adapter import cache
+        fails = int(cache.get(fails_key) or 0)
+        if fails >= 5:
+            return jsonify({
+                "status": "error",
+                "msg": "Too many failed attempts. This OTP has been invalidated. Please request a new code.",
+                "code": "OTP_ATTEMPTS_EXCEEDED"
+            }), 429
+    except Exception:
+        fails_key = None
+        fails = 0
+
+    if not user.otp_token or user.otp_token != otp:
+        if fails_key:
+            try:
+                from app.infrastructure.cache.redis_adapter import cache
+                cache.setex(fails_key, 600, str(fails + 1))
+            except Exception:
+                pass
+        return jsonify({"status": "error", "msg": "Invalid verification code. Please check and try again."}), 400
+
+    if not user.otp_expiry or _to_naive_utc(user.otp_expiry) < datetime.now(timezone.utc).replace(tzinfo=None):
+        return jsonify({"status": "error", "msg": "Verification code has expired. Please request a new one."}), 400
+
+    # Invalidate OTP immediately to prevent reuse
+    user.otp_token = None
+    user.otp_expiry = None
+    if not user.is_verified:
+        user.is_verified = True
+    db.session.add(user)
+    db.session.commit()
+
+    if fails_key:
+        try:
+            from app.infrastructure.cache.redis_adapter import cache
+            cache.delete(fails_key)
+            cache.delete(f"otp_cooldown:login_otp:{user.id}")
+        except Exception:
+            pass
+
+    # Clear lockout
+    try:
+        from app.presentation.middleware.security import clear_login_lockout
+        client_ip = (request.headers.get('X-Forwarded-For', '') or '').split(',')[0].strip() or request.remote_addr or ''
+        clear_login_lockout(identifier)
+        if client_ip:
+            clear_login_lockout(client_ip)
+    except Exception:
+        pass
+
+    return _create_login_session_and_response(user, remember_me=remember_me)
 
 @auth_bp.route('/me', methods=['GET'])
 @auth_bp.route('/profile', methods=['GET'])

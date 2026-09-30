@@ -25,6 +25,9 @@ backend/.env
 Thumbs.db
 
 # Project Specific
+*.db
+*.sqlite
+*.sqlite3
 backend/uploads/
 backend/*.log
 backend/output.txt

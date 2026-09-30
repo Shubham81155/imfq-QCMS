@@ -164,6 +164,54 @@ def get_landing_content():
     except Exception as e:
         return internal_server_error(e, "An internal server error occurred.")
 
+
+@super_admin_bp.route('/landing-cms/upload-hero-image', methods=['POST'])
+@jwt_required()
+@super_admin_required()
+def upload_hero_mockup_image():
+    """Upload hero mockup image for the landing page"""
+    if 'file' not in request.files:
+        return jsonify({'status': 'error', 'message': 'No file uploaded'}), 400
+
+    file = request.files['file']
+    if not file or file.filename == '':
+        return jsonify({'status': 'error', 'message': 'No file selected'}), 400
+
+    allowed_exts = {'png', 'jpg', 'jpeg', 'svg', 'webp', 'gif'}
+    ext = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else ''
+    if ext not in allowed_exts:
+        return jsonify({'status': 'error', 'message': 'Invalid file type. Allowed: PNG, JPG, JPEG, SVG, WEBP'}), 400
+
+    fname = f"hero_mockup_{int(time.time())}_{secrets.token_hex(4)}.{ext}"
+    
+    upload_dir = current_app.config.get('UPLOAD_FOLDER', os.path.join(os.getcwd(), 'uploads'))
+    landing_dir = os.path.join(upload_dir, 'landing')
+    os.makedirs(landing_dir, exist_ok=True)
+    save_path = os.path.join(landing_dir, fname)
+    file.save(save_path)
+
+    try:
+        frontend_landing_dir = os.path.abspath(os.path.join(current_app.root_path, '..', '..', 'frontend', 'uploads', 'landing'))
+        os.makedirs(frontend_landing_dir, exist_ok=True)
+        shutil.copy(save_path, os.path.join(frontend_landing_dir, fname))
+    except Exception:
+        pass
+
+    image_url = f"/uploads/landing/{fname}"
+
+    s = PlatformSettings.query.first()
+    if s:
+        cms = dict(s.landing_cms_settings or {})
+        cms['hero_image_url'] = image_url
+        s.landing_cms_settings = cms
+        db.session.commit()
+
+    return jsonify({
+        'status': 'success',
+        'message': 'Hero mockup image uploaded successfully!',
+        'image_url': image_url
+    }), 200
+
 def log_admin_action(action, target_type=None, target_id=None, details=None):
     admin_id = get_jwt_identity()
     log = SuperAdminLog(
@@ -1594,26 +1642,32 @@ def reset_admin_password(org_id):
     for u in org_users:
         target_users.add(u)
         
+    from app.shared.validation import generate_temp_password
+    from app.infrastructure.mailer.email_service import EmailUtils
+    temp_password = generate_temp_password(8)
+    hashed_pw = bcrypt.generate_password_hash(temp_password).decode('utf-8')
+
     # 3. Fallback: If no user found, create new Admin user for this org
     if not target_users:
         admin_role = Role.query.filter(Role.name.in_(['Admin', 'Organization Admin'])).first() or Role.query.first()
+        admin_uname = (org.email or f"admin_{org.id}@qcms.com").split('@')[0]
         new_admin = User(
+            username=admin_uname,
+            full_name=org.admin_name or org.name or "Admin User",
             email=org.email or f"admin_{org.id}@qcms.com",
-            first_name=org.admin_name or org.name or "Admin",
-            last_name="User",
+            phone=getattr(org, 'phone', None) or getattr(org, 'contact_number', None) or '',
+            hashed_password=hashed_pw,
             org_id=org.id,
             role_id=admin_role.id if admin_role else None,
             is_active=True,
-            is_verified=True
+            is_verified=True,
+            is_temp_password=True,
+            status='Active'
         )
         db.session.add(new_admin)
         db.session.flush()
         target_users.add(new_admin)
 
-    import secrets
-    temp_password = os.getenv('DEFAULT_ADMIN_PASSWORD') or os.getenv('DEFAULT_TEMP_PASSWORD') or 'Welcome@123'
-    hashed_pw = bcrypt.generate_password_hash(temp_password).decode('utf-8')
-    
     for u in target_users:
         u.hashed_password = hashed_pw
         u.is_temp_password = True
@@ -1621,6 +1675,10 @@ def reset_admin_password(org_id):
         u.is_active = True
         if not u.org_id:
             u.org_id = org.id
+        try:
+            EmailUtils.send_temp_password_email(u, temp_password)
+        except Exception as notify_err:
+            logger.warning(f"Failed to dispatch credentials notification to admin {u.id}: {notify_err}")
 
     db.session.commit()
     
@@ -2341,6 +2399,7 @@ _DEFAULTS = {
     },
     'landing_cms_settings': {
         'enable_landing_page': True,
+        'hero_image_url': '/assets/images/hero-mockup-default.png',
         'hero_badge': 'Version 3.0 Now Live',
         'hero_title': 'Precision Quality <br><span class="text-primary">Management</span> at Scale.',
         'hero_subtitle': 'Optimize your organizational efficiency with our structured 8-stage workflow engine. Built for enterprise excellence, designed for modern teams.',
@@ -2384,7 +2443,7 @@ _DEFAULTS = {
         'pricing_subtitle': 'Scale your quality operations without complexity.',
         'pricing_plans': [
             {'name': 'Starter', 'badge': '', 'price': '₹0', 'period': '/month (14d Trial)', 'desc': 'For small focused teams', 'features': ['50 Users Max', 'Basic QC Workflow', 'Limited Reports', '14 Days Free Trial'], 'cta': 'Start Free Trial', 'cta_url': '/auth/register-org.html?plan=Starter'},
-            {'name': 'Professional', 'badge': 'MOST POPULAR', 'price': '₹199', 'period': '/month', 'desc': 'Complete enterprise engine', 'features': ['500 Users', 'Full Workflow Engine', 'Analytics Dashboard', 'Repository + AI Assistant', 'Reports + Audit Logs'], 'cta': 'Start Free Trial', 'cta_url': '/auth/register-org.html?plan=Professional'},
+            {'name': 'Professional', 'badge': 'MOST POPULAR', 'price': '₹199', 'period': '/month', 'desc': 'Complete enterprise engine', 'features': ['500 Users', 'Full Workflow Engine', 'Analytics Dashboard', 'Repository + AI Assistant', 'Reports + Audit Logs'], 'cta': 'Buy Now', 'cta_url': '/auth/register-org.html?plan=Professional'},
             {'name': 'Enterprise', 'badge': '', 'price': 'Custom', 'period': '', 'desc': 'For global scale manufacturing', 'features': ['Unlimited Users', 'Multi Plant Support', 'White Label Branding', 'API Integration', 'Dedicated Support'], 'cta': 'Contact Sales', 'cta_url': 'openTalkToSalesModal()'}
         ],
 

@@ -889,7 +889,7 @@ const Stage4 = {
         if (!causes.length && s3.cause_verification && Array.isArray(s3.cause_verification)) {
             s3.cause_verification.forEach(cv => {
                 const c = (cv.cause || cv.suspect_cause || cv.level1 || '').trim();
-                if (c && !causes.includes(c)) causes.push(c);
+                if (c && !c.includes('OctaQube') && !c.startsWith('{') && !causes.includes(c)) causes.push(c);
             });
         }
 
@@ -897,7 +897,7 @@ const Stage4 = {
         if (!causes.length && s3.cause_prioritization && Array.isArray(s3.cause_prioritization)) {
             s3.cause_prioritization.forEach(cp => {
                 const c = (cp.cause || cp.level1 || '').trim();
-                if (c && !causes.includes(c)) causes.push(c);
+                if (c && !c.includes('OctaQube') && !c.startsWith('{') && !causes.includes(c)) causes.push(c);
             });
         }
 

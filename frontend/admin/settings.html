@@ -7028,8 +7028,8 @@ console.log(data);
     </style>
 
     <script src="/assets/dist/bootstrap.bundle.min.js"></script>
-    <script src="/assets/dist/core-bundle.2abaccd7.min.js"></script>
-    <script src="/assets/dist/platform-settings.05729cbd.min.js"></script>
+    <script src="/assets/dist/core-bundle.4fed00f2.min.js"></script>
+    <script src="/assets/dist/platform-settings.a83f1558.min.js"></script>
     <script>
     const settingsManager = {
         isDirty: false,
@@ -8567,7 +8567,7 @@ ET`;
                         : `<span class="badge bg-success-subtle text-success">${p.status}</span>`;
 
                     const actionBtn = isPayable
-                        ? `<button class="ds-btn ds-btn-sm ds-btn-primary fw-bold py-1 px-2.5 text-xs text-white shadow-sm" onclick="openCheckoutModal('${p.invoice_id || ''}', ${p.amount})" title="Pay Outstanding Invoice">
+                        ? `<button class="ds-btn ds-btn-sm ds-btn-primary fw-bold py-1 px-2.5 text-xs text-white shadow-sm" onclick="openCheckoutModal('${p.invoice_id || ''}', ${p.amount}, '${p.plan || 'Pay-As-You-Go'}', '${p.transaction_id || ''}')" title="Pay Outstanding Invoice">
                                <i data-lucide="credit-card" style="width:13px;height:13px;" class="me-1"></i> Pay Now
                            </button>`
                         : `<button class="ds-btn ds-btn-sm ds-btn-outline" onclick="settingsManager.downloadInvoice('${p.transaction_id || 'TXN-001'}', '${p.amount || 0}', '${p.currency || 'INR'}', '${p.plan || 'Professional'}', '${new Date(p.date).toLocaleDateString()}')" title="Download Invoice PDF">
@@ -9803,6 +9803,28 @@ ET`;
                 </div>`;
             }
 
+            let targetPlanItem = null;
+            if (window._checkoutTargetPlan) {
+                const query = String(window._checkoutTargetPlan).toLowerCase();
+                targetPlanItem = plans.find(p => 
+                    (p.name && p.name.toLowerCase().includes(query)) ||
+                    (p.plan_name && p.plan_name.toLowerCase().includes(query)) ||
+                    (p.code && p.code.toLowerCase().includes(query)) ||
+                    (p.plan_type && p.plan_type.toLowerCase().includes(query))
+                );
+            }
+            if (!targetPlanItem && (window._checkoutTargetInvoiceId || window._checkoutPrefilledAmount)) {
+                targetPlanItem = plans.find(p => 
+                    (p.plan_type && p.plan_type.toLowerCase().includes('pay')) ||
+                    p.pricing_model === 'pay_as_you_go' ||
+                    (p.name && p.name.toLowerCase().includes('pay')) ||
+                    (p.code && p.code.toLowerCase().includes('payg'))
+                );
+            }
+            if (!targetPlanItem && plans.length > 0) {
+                targetPlanItem = plans[0];
+            }
+
             html += plans.map((p, idx) => {
                 const planKey = String(p.id || p.name);
                 const isPayg = (p.plan_type && p.plan_type.toLowerCase().includes('pay')) || p.pricing_model === 'pay_as_you_go';
@@ -9810,8 +9832,9 @@ ET`;
                 const priceFmt = priceNum ? priceNum.toLocaleString('en-IN') : '0';
                 const usersFmt = isPayg ? `Metered (${p.payg_rules?.user_free_tier || 0} Free Seats)` : (p.max_users >= 99999 ? 'Unlimited Users (∞)' : `Up to ${p.max_users} Users`);
                 const storageFmt = isPayg ? `Metered (${p.payg_rules?.storage_free_tier_gb || 0} GB Free)` : `${p.storage_limit_gb || 10} GB Storage`;
-                const isChecked = idx === 0 ? 'checked' : '';
-                const initialClass = idx === 0 ? 'border-primary bg-primary-subtle' : '';
+                const isSelected = targetPlanItem && (String(p.id) === String(targetPlanItem.id) || p.name === targetPlanItem.name || p.plan_name === targetPlanItem.plan_name);
+                const isChecked = isSelected ? 'checked' : '';
+                const initialClass = isSelected ? 'border-primary bg-primary-subtle' : '';
 
                 return `
                 <div class="p-3 border rounded plan-card-item d-flex justify-content-between align-items-center mb-2 ${initialClass}" style="cursor: pointer; transition: all 0.2s ease;" onclick="selectCheckoutPlan('${planKey}')" id="checkoutPlanCard_${planKey}">
@@ -9835,8 +9858,8 @@ ET`;
             container.innerHTML = html;
             if (window.lucide) lucide.createIcons();
 
-            if (plans.length > 0) {
-                selectCheckoutPlan(plans[0].id || plans[0].name);
+            if (targetPlanItem) {
+                selectCheckoutPlan(targetPlanItem.id || targetPlanItem.name);
             }
         }
 
@@ -9859,10 +9882,21 @@ ET`;
             if (radio) radio.checked = true;
 
             // Calculate details & totals
-            const price = isPayg ? parseFloat(plan.payg_rules?.base_fee ?? 999) : parseFloat(plan.base_price ?? plan.price ?? 0);
+            const isPayingInvoice = Boolean(window._checkoutPrefilledAmount && (window._checkoutTargetInvoiceId || window._checkoutInvoiceNumber) && isPayg);
+            let price, tax, total;
+
+            if (isPayingInvoice) {
+                total = parseFloat(window._checkoutPrefilledAmount) || 0;
+                price = +(total / 1.18).toFixed(2);
+                tax = +(total - price).toFixed(2);
+                paymentTotal = total;
+            } else {
+                price = isPayg ? parseFloat(plan.payg_rules?.base_fee ?? 999) : parseFloat(plan.base_price ?? plan.price ?? 0);
+                tax = price * 0.18;
+                total = price + tax;
+                paymentTotal = total;
+            }
             currentPlanPrice = price;
-            const tax = price * 0.18;
-            paymentTotal = price + tax;
 
             // Update Summary Side Panel Details
             document.getElementById('summaryPlan').innerText = plan.name || plan.plan_name;
@@ -9870,7 +9904,7 @@ ET`;
                 document.getElementById('summaryPlanCode').innerText = plan.code ? `(${plan.code})` : '';
             }
             if (document.getElementById('summaryBillingCycle')) {
-                document.getElementById('summaryBillingCycle').innerText = isPayg ? 'Monthly (Usage-Based)' : (plan.billing_cycle || 'Monthly');
+                document.getElementById('summaryBillingCycle').innerText = isPayingInvoice ? (window._checkoutInvoiceNumber ? `Invoice: ${window._checkoutInvoiceNumber}` : 'Monthly Metered Bill') : (isPayg ? 'Monthly (Usage-Based)' : (plan.billing_cycle || 'Monthly'));
             }
             document.getElementById('summaryAmount').innerText = `₹${price.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
             document.getElementById('summaryTax').innerText = `₹${tax.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
@@ -9878,13 +9912,13 @@ ET`;
 
             // Update Full Details (Users, Storage, Modules, Description) in Summary Panel
             if (document.getElementById('summaryUsers')) {
-                document.getElementById('summaryUsers').innerText = isPayg ? `Metered (₹${plan.payg_rules?.user_rate || 50}/user, ${plan.payg_rules?.user_free_tier || 0} free)` : (plan.max_users >= 99999 ? 'Unlimited (∞)' : `${plan.max_users} users`);
+                document.getElementById('summaryUsers').innerText = isPayg ? `Metered (${plan.payg_rules?.user_rate ? `₹${plan.payg_rules.user_rate}/user` : 'Per-seat'}, ${plan.payg_rules?.user_free_tier || 0} free)` : (plan.max_users >= 99999 ? 'Unlimited (∞)' : `${plan.max_users} users`);
             }
             if (document.getElementById('summaryStorage')) {
-                document.getElementById('summaryStorage').innerText = isPayg ? `Metered (₹${plan.payg_rules?.storage_rate_per_gb || 20}/GB, ${plan.payg_rules?.storage_free_tier_gb || 0} GB free)` : `${plan.storage_limit_gb || 10} GB`;
+                document.getElementById('summaryStorage').innerText = isPayg ? `Metered (${plan.payg_rules?.storage_rate_per_gb ? `₹${plan.payg_rules.storage_rate_per_gb}/GB` : 'Per-GB'}, ${plan.payg_rules?.storage_free_tier_gb || 0} GB free)` : `${plan.storage_limit_gb || 10} GB`;
             }
             if (document.getElementById('summaryDesc')) {
-                document.getElementById('summaryDesc').innerText = isPayg ? 'Usage-based monthly metered billing with itemized invoice delivery.' : (plan.description || 'Configured enterprise SaaS tier.');
+                document.getElementById('summaryDesc').innerText = isPayingInvoice ? `Payment for outstanding monthly metered invoice ${window._checkoutInvoiceNumber || ''}.` : (isPayg ? 'Usage-based monthly metered billing with itemized invoice delivery.' : (plan.description || 'Configured enterprise SaaS tier.'));
             }
 
             const modulesContainer = document.getElementById('summaryModulesList');
@@ -9938,7 +9972,10 @@ ET`;
             const pa = encodeURIComponent(qrInfo.upi_id || 'octaqube@upi');
             const am = paymentTotal.toFixed(2);
             const plan = selectedPlanObj ? (selectedPlanObj.name || selectedPlanObj.plan_name) : (document.querySelector('input[name="planSelect"]:checked')?.value || 'Professional');
-            const uri = `upi://pay?pa=${pa}&pn=${pn}&am=${am}&cu=INR&tn=OctaQube%20Plan%20Upgrade%20to%20${plan}`;
+            const note = window._checkoutInvoiceNumber 
+                ? `OctaQube%20Invoice%20${encodeURIComponent(window._checkoutInvoiceNumber)}`
+                : `OctaQube%20Plan%20Upgrade%20to%20${encodeURIComponent(plan)}`;
+            const uri = `upi://pay?pa=${pa}&pn=${pn}&am=${am}&cu=INR&tn=${note}`;
             
             const qrUrl = qrInfo.qr_code_url || `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(uri)}`;
             document.getElementById('upiQrImage').src = qrUrl;
@@ -10115,12 +10152,14 @@ ET`;
             });
         }
 
-        async function openCheckoutModal(invoiceId = null, prefilledAmount = null) {
+        async function openCheckoutModal(invoiceId = null, prefilledAmount = null, targetPlan = null, invoiceNumber = null) {
             if (!await _checkGstPanBeforeCheckout()) return;
             selectedGateway = null;
             activeGateways = {};
             window._checkoutTargetInvoiceId = invoiceId;
             window._checkoutPrefilledAmount = prefilledAmount;
+            window._checkoutTargetPlan = targetPlan;
+            window._checkoutInvoiceNumber = invoiceNumber;
 
             const pmContainer = document.getElementById('paymentMethodsContainer');
             if (pmContainer) pmContainer.innerHTML = '<div class="text-muted text-sm py-3"><i data-lucide="loader-2" class="me-2 spinner"></i>Loading available payment gateways...</div>';
@@ -10150,19 +10189,28 @@ ET`;
             
             try {
                 if (selectedGateway === 'razorpay') {
-                    const orderRes = await api.post('/billing/razorpay/create-order', { plan_name: plan });
+                    const orderRes = await api.post('/billing/razorpay/create-order', { 
+                        plan_name: plan,
+                        amount: paymentTotal,
+                        invoice_id: window._checkoutTargetInvoiceId
+                    });
                     
                     const rzKey = activeGateways.razorpay?.key_id || 'rzp_live_octaqube_enterprise_key';
+                    const desc = window._checkoutInvoiceNumber 
+                        ? `Payment for Invoice ${window._checkoutInvoiceNumber}` 
+                        : `Subscription Upgrade to ${plan} Plan`;
                     const options = {
                         "key": rzKey,
                         "amount": Math.round(paymentTotal * 100),
                         "currency": "INR",
                         "name": "OctaQube Enterprise OS",
-                        "description": `Subscription Upgrade to ${plan} Plan`,
+                        "description": desc,
                         "handler": async function (response) {
                             try {
                                 const vRes = await api.post('/billing/razorpay/verify-payment', {
                                     plan_name: plan,
+                                    amount: paymentTotal,
+                                    invoice_id: window._checkoutTargetInvoiceId,
                                     razorpay_payment_id: response.razorpay_payment_id,
                                     razorpay_order_id: response.razorpay_order_id
                                 });
@@ -10219,6 +10267,12 @@ ET`;
             formData.append('transaction_id', txnId);
             formData.append('notes', notes);
             formData.append('file', fileInput.files[0]);
+            if (window._checkoutTargetInvoiceId) {
+                formData.append('invoice_id', window._checkoutTargetInvoiceId);
+            }
+            if (window._checkoutPrefilledAmount) {
+                formData.append('amount', window._checkoutPrefilledAmount);
+            }
 
             try {
                 const token = (window.api && window.api.token) || sessionStorage.getItem('token') || localStorage.getItem('token') || localStorage.getItem('access_token') || '';
@@ -10250,6 +10304,9 @@ ET`;
                     if (typeof fetchOfflinePaymentStatus === 'function') {
                         fetchOfflinePaymentStatus();
                     }
+                    if (typeof fetchBillingHistory === 'function') {
+                        fetchBillingHistory();
+                    }
                 } else {
                     const errorMsg = data.message || data.error || (res.statusText ? `Request failed (${res.status}): ${res.statusText}` : 'Submission failed. Please verify your details.');
                     if (typeof OctaQube !== 'undefined' && OctaQube.toast) {
@@ -10278,32 +10335,8 @@ ET`;
                 const alertBox = document.getElementById('offlinePaymentStatusAlert');
                 if (!alertBox) return;
 
-                // 1. Check for Pending Pay-As-You-Go Bill / Unpaid Invoice
-                const paygBill = await api.get('/admin/pending-payg-bill').catch(() => null);
-                if (paygBill && paygBill.has_pending) {
-                    alertBox.innerHTML = `
-                        <div class="p-4 bg-primary bg-opacity-10 border border-primary border-opacity-25 rounded-3 mb-4 text-dark shadow-sm">
-                            <div class="d-flex justify-content-between align-items-center mb-2">
-                                <div class="fw-bold text-sm text-primary">
-                                    <i data-lucide="receipt" class="me-1.5"></i> Outstanding Monthly Pay-As-You-Go Bill
-                                </div>
-                                <span class="badge bg-danger text-white text-xxs px-2 py-1">Payment Required</span>
-                            </div>
-                            <div class="text-xs text-secondary mb-3">
-                                Your monthly metered invoice <strong>${OctaQube.escapeHtml(paygBill.invoice_number)}</strong> for <strong>₹${paygBill.amount.toLocaleString('en-IN', {minimumFractionDigits: 2})}</strong> (${paygBill.period_start || ''} to ${paygBill.period_end || ''}) has been generated and is ready for payment.
-                            </div>
-                            <div class="d-flex justify-content-end align-items-center gap-2">
-                                <button type="button" class="ds-btn ds-btn-primary ds-btn-sm py-2 px-4 fw-bold text-white shadow-sm" onclick="openCheckoutModal('${paygBill.invoice_id}', ${paygBill.amount})">
-                                    <i data-lucide="credit-card" class="me-1.5"></i> Pay Invoice Now (₹${paygBill.amount.toLocaleString('en-IN', {minimumFractionDigits: 2})})
-                                </button>
-                            </div>
-                        </div>
-                    `;
-                    if (window.lucide) lucide.createIcons();
-                    return;
-                }
-
-                const res = await api.get('/billing/offline-payment/status');
+                // 1. Check offline payment status first
+                const res = await api.get('/billing/offline-payment/status').catch(() => null);
 
                 if (res && res.status === 'success' && res.proof) {
                     const p = res.proof;
@@ -10318,10 +10351,12 @@ ET`;
                                 </div>
                                 <div class="text-xs text-secondary">
                                     Submitted UTR: <strong class="font-monospace text-main">${OctaQube.escapeHtml(p.transaction_id)}</strong> for <strong>${OctaQube.escapeHtml(p.plan_name)} Plan</strong> on ${p.created_at}.
-                                    Your plan will be activated within 24 hours upon SuperAdmin verification.
+                                    Your payment is currently under verification by the Administrator. Verification typically completes within 24 hours.
                                 </div>
                             </div>
                         `;
+                        if (window.lucide) lucide.createIcons();
+                        return;
                     } else if (p.status === 'Rejected') {
                         alertBox.innerHTML = `
                             <div class="p-4 bg-danger-subtle border border-danger-subtle rounded-3 mb-4 text-danger">
@@ -10348,24 +10383,54 @@ ET`;
                                 </div>
                             </div>
                         `;
-                    } else if (p.status === 'Approved') {
-                        alertBox.innerHTML = `
-                            <div class="p-3 bg-success-subtle border border-success-subtle rounded-3 mb-4">
-                                <div class="d-flex justify-content-between align-items-center">
-                                    <div class="fw-bold text-success text-sm">
-                                        <i data-lucide="check-circle" class="me-1"></i> Offline Payment Verified & Subscription Active
-                                    </div>
-                                    <span class="badge bg-success text-white text-xxs">Active</span>
-                                </div>
-                                <div class="text-xs text-secondary mt-1">
-                                    Your payment (UTR: <strong class="font-monospace text-main">${OctaQube.escapeHtml(p.transaction_id)}</strong>) for <strong>${OctaQube.escapeHtml(p.plan_name)} Plan</strong> was approved on ${p.verified_at || 'N/A'}.
-                                </div>
-                            </div>
-                        `;
-                    } else {
-                        alertBox.innerHTML = '';
+                        if (window.lucide) lucide.createIcons();
+                        return;
                     }
+                }
+
+                // 2. Check for Pending Pay-As-You-Go Bill / Unpaid Invoice only if no proof is pending
+                const paygBill = await api.get('/admin/pending-payg-bill').catch(() => null);
+                if (paygBill && paygBill.has_pending) {
+                    alertBox.innerHTML = `
+                        <div class="p-4 bg-primary bg-opacity-10 border border-primary border-opacity-25 rounded-3 mb-4 text-dark shadow-sm">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <div class="fw-bold text-sm text-primary">
+                                    <i data-lucide="receipt" class="me-1.5"></i> Outstanding Monthly Pay-As-You-Go Bill
+                                </div>
+                                <span class="badge bg-danger text-white text-xxs px-2 py-1">Payment Required</span>
+                            </div>
+                            <div class="text-xs text-secondary mb-3">
+                                Your monthly metered invoice <strong>${OctaQube.escapeHtml(paygBill.invoice_number)}</strong> for <strong>₹${paygBill.amount.toLocaleString('en-IN', {minimumFractionDigits: 2})}</strong> (${paygBill.period_start || ''} to ${paygBill.period_end || ''}) has been generated and is ready for payment.
+                            </div>
+                            <div class="d-flex justify-content-end align-items-center gap-2">
+                                <button type="button" class="ds-btn ds-btn-primary ds-btn-sm py-2 px-4 fw-bold text-white shadow-sm" onclick="openCheckoutModal('${paygBill.invoice_id}', ${paygBill.amount}, 'Pay-As-You-Go', '${OctaQube.escapeHtml(paygBill.invoice_number)}')">
+                                    <i data-lucide="credit-card" class="me-1.5"></i> Pay Invoice Now (₹${paygBill.amount.toLocaleString('en-IN', {minimumFractionDigits: 2})})
+                                </button>
+                            </div>
+                        </div>
+                    `;
                     if (window.lucide) lucide.createIcons();
+                    return;
+                }
+
+                if (res && res.status === 'success' && res.proof && res.proof.status === 'Approved') {
+                    const p = res.proof;
+                    alertBox.innerHTML = `
+                        <div class="p-3 bg-success-subtle border border-success-subtle rounded-3 mb-4">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div class="fw-bold text-success text-sm">
+                                    <i data-lucide="check-circle" class="me-1"></i> Offline Payment Verified & Subscription Active
+                                </div>
+                                <span class="badge bg-success text-white text-xxs">Active</span>
+                            </div>
+                            <div class="text-xs text-secondary mt-1">
+                                Your payment (UTR: <strong class="font-monospace text-main">${OctaQube.escapeHtml(p.transaction_id)}</strong>) for <strong>${OctaQube.escapeHtml(p.plan_name)} Plan</strong> was approved on ${p.verified_at || 'N/A'}.
+                            </div>
+                        </div>
+                    `;
+                    if (window.lucide) lucide.createIcons();
+                } else {
+                    alertBox.innerHTML = '';
                 }
             } catch (err) {
                 console.warn('fetchOfflinePaymentStatus error:', err);

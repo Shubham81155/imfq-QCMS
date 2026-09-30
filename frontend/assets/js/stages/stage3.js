@@ -1139,11 +1139,16 @@ const Stage3 = {
         const prioContainer = document.getElementById('s3_priorityContainer');
         if (prioContainer) {
             const existingPrio = (initialPrio && initialPrio.length) ? initialPrio : this.collectPrioritizationRows();
-            const findPrio = (causeName) => {
-                let match = existingPrio.find(p => p.cause && p.cause.trim() === causeName);
+            const findPrio = (causeName, idx) => {
+                let match = existingPrio.find(p => p.cause && !p.cause.includes('OctaQube') && !p.cause.startsWith('{') && p.cause.trim() === causeName);
                 if (match) return match;
                 const baseDesc = causeName.split(' - ')[0].trim();
-                return existingPrio.find(p => p.cause && (causeName.includes(p.cause.trim()) || p.cause.trim().includes(baseDesc)));
+                match = existingPrio.find(p => p.cause && !p.cause.includes('OctaQube') && !p.cause.startsWith('{') && (causeName.includes(p.cause.trim()) || p.cause.trim().includes(baseDesc)));
+                if (match) return match;
+                if (existingPrio[idx] && (!existingPrio[idx].cause || existingPrio[idx].cause.includes('OctaQube') || existingPrio[idx].cause.startsWith('{'))) {
+                    return existingPrio[idx];
+                }
+                return null;
             };
 
             const headerHtml = `
@@ -1158,14 +1163,24 @@ const Stage3 = {
             `;
 
             prioContainer.innerHTML = headerHtml;
-            causeList.forEach(cause => {
-                const existing = findPrio(cause);
+            causeList.forEach((cause, idx) => {
+                const existing = findPrio(cause, idx);
+                const imp = existing ? existing.impact : '';
+                const frq = existing ? existing.frequency : '';
+                const con = existing ? existing.control : '';
+                let tot = existing ? existing.total : '';
+                if (!tot && (imp || frq || con)) {
+                    const i = parseInt(imp) || 0;
+                    const f = parseInt(frq) || 0;
+                    const c = parseInt(con) || 0;
+                    if (i > 0 || f > 0 || c > 0) tot = String(i * f * c);
+                }
                 this.addPrioritizationRow({
                     cause: cause,
-                    impact: existing ? existing.impact : '',
-                    frequency: existing ? existing.frequency : '',
-                    control: existing ? existing.control : '',
-                    total: existing ? existing.total : ''
+                    impact: imp,
+                    frequency: frq,
+                    control: con,
+                    total: tot
                 });
             });
         }
@@ -1174,11 +1189,16 @@ const Stage3 = {
         const verContainer = document.getElementById('s3_verificationContainer');
         if (verContainer) {
             const existingVer = (initialVer && initialVer.length) ? initialVer : this.collectVerificationRows();
-            const findVer = (causeName) => {
-                let match = existingVer.find(v => v.cause && v.cause.trim() === causeName);
+            const findVer = (causeName, idx) => {
+                let match = existingVer.find(v => v.cause && !v.cause.includes('OctaQube') && !v.cause.startsWith('{') && v.cause.trim() === causeName);
                 if (match) return match;
                 const baseDesc = causeName.split(' - ')[0].trim();
-                return existingVer.find(v => v.cause && (causeName.includes(v.cause.trim()) || v.cause.trim().includes(baseDesc)));
+                match = existingVer.find(v => v.cause && !v.cause.includes('OctaQube') && !v.cause.startsWith('{') && (causeName.includes(v.cause.trim()) || v.cause.trim().includes(baseDesc)));
+                if (match) return match;
+                if (existingVer[idx] && (!existingVer[idx].cause || existingVer[idx].cause.includes('OctaQube') || existingVer[idx].cause.startsWith('{'))) {
+                    return existingVer[idx];
+                }
+                return null;
             };
 
             const headerHtml = `
@@ -1193,8 +1213,8 @@ const Stage3 = {
             `;
 
             verContainer.innerHTML = headerHtml;
-            causeList.forEach(cause => {
-                const existing = findVer(cause);
+            causeList.forEach((cause, idx) => {
+                const existing = findVer(cause, idx);
                 this.addVerificationRow({
                     cause: cause,
                     method: existing ? existing.method : '',
@@ -1241,18 +1261,24 @@ const Stage3 = {
         const r = document.createElement('div');
         r.className = 'row g-2 mb-2 align-items-center dyn-row';
         const calc = "const p=this.closest('.dyn-row'); p.querySelector('.r-tot').value = (parseInt(p.querySelector('.r-imp').value)||0)*(parseInt(p.querySelector('.r-frq').value)||0)*(parseInt(p.querySelector('.r-con').value)||0);";
-        const cleanStr = (s) => (s && typeof s === 'string' && !s.includes('OctaQube')) ? s : '';
+        const cleanStr = (s) => (s && typeof s === 'string' && !s.includes('OctaQube') && !s.startsWith('{')) ? s : '';
         const causeVal = cleanStr(data.cause);
         const impVal = cleanStr(data.impact);
         const frqVal = cleanStr(data.frequency);
         const conVal = cleanStr(data.control);
-        const totVal = cleanStr(data.total);
+        let totVal = cleanStr(data.total);
+        if (!totVal && (impVal || frqVal || conVal)) {
+            const i = parseInt(impVal) || 0;
+            const f = parseInt(frqVal) || 0;
+            const c = parseInt(conVal) || 0;
+            if (i > 0 || f > 0 || c > 0) totVal = String(i * f * c);
+        }
 
         r.innerHTML = `
             <div class="col-3"><input type="text" class="ds-input r-cause" placeholder="e.g. PM overdue by 2 weeks" value="${OctaQube.escapeHtml(causeVal)}" required></div>
-            <div class="col-2"><input type="number" class="ds-input r-imp" placeholder="1-10" value="${OctaQube.escapeHtml(impVal)}" onchange="${calc}" required></div>
-            <div class="col-2"><input type="number" class="ds-input r-frq" placeholder="1-10" value="${OctaQube.escapeHtml(frqVal)}" onchange="${calc}" required></div>
-            <div class="col-2"><input type="number" class="ds-input r-con" placeholder="1-10" value="${OctaQube.escapeHtml(conVal)}" onchange="${calc}" required></div>
+            <div class="col-2"><input type="number" class="ds-input r-imp" placeholder="1-10" value="${OctaQube.escapeHtml(impVal)}" oninput="${calc}" onchange="${calc}" required></div>
+            <div class="col-2"><input type="number" class="ds-input r-frq" placeholder="1-10" value="${OctaQube.escapeHtml(frqVal)}" oninput="${calc}" onchange="${calc}" required></div>
+            <div class="col-2"><input type="number" class="ds-input r-con" placeholder="1-10" value="${OctaQube.escapeHtml(conVal)}" oninput="${calc}" onchange="${calc}" required></div>
             <div class="col-2"><input type="number" class="ds-input r-tot" readonly style="background:var(--ds-surface-raised)" value="${OctaQube.escapeHtml(totVal)}"></div>
             <div class="col-1"><button class="ds-btn ds-btn-ghost text-danger p-1" onclick="this.closest('.dyn-row').remove()"><i data-lucide="trash-2" style="width:14px;"></i></button></div>`;
         c.appendChild(r);
@@ -1261,20 +1287,33 @@ const Stage3 = {
     collectPrioritizationRows() {
         const container = document.getElementById('s3_priorityContainer');
         if (!container) return [];
-        return [...container.querySelectorAll('.dyn-row')].map(r => ({
-            cause: r.querySelector('.r-cause').value.trim(),
-            impact: r.querySelector('.r-imp').value.trim(),
-            frequency: r.querySelector('.r-frq').value.trim(),
-            control: r.querySelector('.r-con').value.trim(),
-            total: r.querySelector('.r-tot').value.trim()
-        })).filter(x => x.cause && !x.cause.includes('OctaQube'));
+        return [...container.querySelectorAll('.dyn-row')].map(r => {
+            const cause = r.querySelector('.r-cause').value.trim();
+            const imp = r.querySelector('.r-imp').value.trim();
+            const frq = r.querySelector('.r-frq').value.trim();
+            const con = r.querySelector('.r-con').value.trim();
+            let tot = r.querySelector('.r-tot').value.trim();
+            if (!tot && (imp || frq || con)) {
+                const i = parseInt(imp) || 0;
+                const f = parseInt(frq) || 0;
+                const c = parseInt(con) || 0;
+                if (i > 0 || f > 0 || c > 0) tot = String(i * f * c);
+            }
+            return {
+                cause: cause,
+                impact: imp,
+                frequency: frq,
+                control: con,
+                total: tot
+            };
+        }).filter(x => x.cause && !x.cause.includes('OctaQube') && !x.cause.startsWith('{'));
     },
 
     addVerificationRow(data = {}) {
         const c = document.getElementById('s3_verificationContainer');
         const r = document.createElement('div');
         r.className = 'row g-2 mb-2 align-items-center dyn-row';
-        const cleanStr = (s) => (s && typeof s === 'string' && !s.includes('OctaQube')) ? s : '';
+        const cleanStr = (s) => (s && typeof s === 'string' && !s.includes('OctaQube') && !s.startsWith('{')) ? s : '';
         const causeVal = cleanStr(data.cause);
         const methVal = cleanStr(data.method);
         const srcVal = cleanStr(data.source);
@@ -1300,7 +1339,7 @@ const Stage3 = {
             source: r.querySelector('.r-src').value.trim(),
             result: r.querySelector('.r-res').value.trim(),
             conclusion: r.querySelector('.r-conc').value.trim()
-        })).filter(x => x.cause && !x.cause.includes('OctaQube'));
+        })).filter(x => x.cause && !x.cause.includes('OctaQube') && !x.cause.startsWith('{'));
     },
 
     addFishboneL3Row(data = {}) {

@@ -1992,10 +1992,30 @@ const Stage2 = {
 
     onStandardChange(type) {
         const btn = document.getElementById(`btn_analyze_${type}_dev`);
-        if (btn) {
-            btn.classList.remove('d-none');
+        if (!btn) return;
+        // Determine if project is closed/completed (read-only)
+        const _projStatus = (
+            (this.projectData && this.projectData.status) ||
+            (typeof ProjectApp !== 'undefined' && ProjectApp.projectData && ProjectApp.projectData.status) ||
+            ''
+        ).toLowerCase();
+        const _isClosed = ['closed', 'completed', 'rejected', 'stage 1 rejected', 'archived'].some(s => _projStatus.includes(s));
+        btn.classList.remove('d-none');
+        if (_isClosed) {
+            // Make button read-only: disable it and visually indicate view-only
+            btn.disabled = true;
+            btn.setAttribute('disabled', 'disabled');
+            btn.title = 'Project is closed — deviation analysis is read-only';
+            btn.style.opacity = '0.55';
+            btn.style.cursor = 'not-allowed';
+            btn.style.pointerEvents = 'none';
+        } else {
             btn.removeAttribute('disabled');
             btn.disabled = false;
+            btn.title = '';
+            btn.style.opacity = '';
+            btn.style.cursor = '';
+            btn.style.pointerEvents = '';
         }
     },
 

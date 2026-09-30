@@ -9,6 +9,7 @@ from app.infrastructure.database.models.models import (
 )
 from app.domain.services.email_notification_engine import EmailNotificationEngine, DEFAULT_NOTIFICATION_PRESETS
 from app.domain.services.document_branding_service import DocumentBrandingService
+from app.shared.validation import generate_temp_password
 
 logger = logging.getLogger(__name__)
 
@@ -590,11 +591,11 @@ def send_test_sms_template(template_key):
         'login_identifier': user.email or getattr(user, 'phone', None) or 'user@company.com',
         'email': user.email or 'user@company.com',
         'user_email': user.email or 'user@company.com',
-        'Password': os.getenv('DEFAULT_TEMP_PASSWORD', 'Welcome@123'),
-        'password': os.getenv('DEFAULT_TEMP_PASSWORD', 'Welcome@123'),
-        'temp_password': os.getenv('DEFAULT_TEMP_PASSWORD', 'Welcome@123'),
-        'temporary_password': os.getenv('DEFAULT_TEMP_PASSWORD', 'Welcome@123'),
-        'default_password': os.getenv('DEFAULT_TEMP_PASSWORD', 'Welcome@123'),
+        'Password': generate_temp_password(8),
+        'password': generate_temp_password(8),
+        'temp_password': generate_temp_password(8),
+        'temporary_password': generate_temp_password(8),
+        'default_password': generate_temp_password(8),
         'invoice_number': 'INV-2026-089',
         'total_amount': '₹ 12,500',
         'amount': '₹ 12,500',

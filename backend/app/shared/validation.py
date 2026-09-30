@@ -112,6 +112,33 @@ def validate_password(password: str, field_name: str = "Password") -> str:
         raise ValidationError(f"{field_name} must contain at least one special character (!@#$...).", field=field_name)
     return password
 
+def generate_temp_password(length: int = 8) -> str:
+    """
+    Generates a secure, cryptographically random temporary password.
+    Guarantees at least 1 uppercase letter, 1 lowercase letter, 1 digit, and 1 special character.
+    Default length is 8 characters.
+    """
+    import secrets
+    import string
+
+    if length < 8:
+        length = 8
+
+    specials = "@#$%&*!"
+    chars = [
+        secrets.choice(string.ascii_uppercase),
+        secrets.choice(string.ascii_lowercase),
+        secrets.choice(string.digits),
+        secrets.choice(specials)
+    ]
+    all_pool = string.ascii_letters + string.digits + specials
+    for _ in range(length - 4):
+        chars.append(secrets.choice(all_pool))
+
+    secrets.SystemRandom().shuffle(chars)
+    return "".join(chars)
+
+
 def validate_number(val, field_name: str, min_val: float = None, max_val: float = None, required: bool = True):
     """Validates numeric input within min and max boundaries."""
     if val is None or val == "":

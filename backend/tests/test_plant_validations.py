@@ -1,8 +1,10 @@
 import uuid
+from unittest.mock import patch
 import pytest
 from app.infrastructure.database.models.models import db, Plant, User
 
-def test_plant_code_required_and_unique(client, auth_context):
+@patch('app.domain.services.subscription_service.SubscriptionManager.check_location_limit', return_value=(True, 'Unlimited'))
+def test_plant_code_required_and_unique(mock_limit, client, auth_context):
     headers = auth_context['headers']
     code_a = f"VPA-{uuid.uuid4().hex[:4].upper()}"
     code_b = f"VPB-{uuid.uuid4().hex[:4].upper()}"

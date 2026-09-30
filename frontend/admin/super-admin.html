@@ -2708,28 +2708,40 @@
                                                         <input type="text" class="form-control" id="ps-cms-cta-secondary-url" placeholder="URL (e.g. #features or https://...)">
                                                         <div class="text-xxs text-muted mt-1">Text label &amp; destination URL for the secondary button.</div>
                                                     </div>
-                                                    <div class="col-md-4">
-                                                        <label class="form-label text-xs fw-semibold text-secondary uppercase">Stat 1 (Value & Label)</label>
-                                                        <div class="input-group">
-                                                            <input type="text" class="form-control" id="ps-cms-hero-stat1-val" placeholder="98.2%">
-                                                            <input type="text" class="form-control" id="ps-cms-hero-stat1-lbl" placeholder="Quality Score">
+                                                    <div class="col-12 mt-3">
+                                                        <label class="form-label text-xs fw-bold text-secondary text-uppercase mb-1" style="letter-spacing:.05em;">
+                                                            <i data-lucide="image" style="width:14px;height:14px;" class="me-1"></i>
+                                                            Hero Mockup Image
+                                                        </label>
+                                                        <div class="p-3 rounded border" style="background: var(--ds-bg-elevated, rgba(255,255,255,0.03)); border-color: var(--ds-border-color) !important;">
+                                                            <div class="row align-items-center g-3">
+                                                                <div class="col-md-4 text-center">
+                                                                    <div class="border rounded p-2 d-inline-block position-relative shadow-sm" style="background: rgba(0, 35, 71, 0.4); max-width: 100%; border-color: var(--ds-border-color) !important;">
+                                                                        <img id="ps-cms-hero-image-preview" src="/assets/images/hero-mockup-default.png" alt="Hero Preview" style="max-height: 140px; max-width: 100%; object-fit: contain; border-radius: 8px;">
+                                                                    </div>
+                                                                </div>
+                                                                <div class="col-md-8">
+                                                                    <div class="d-flex flex-wrap gap-2 mb-2">
+                                                                        <label for="ps-cms-hero-file-input" class="ds-btn ds-btn-primary ds-btn-sm py-1.5 px-3 cursor-pointer mb-0">
+                                                                            <i data-lucide="upload" style="width:14px;height:14px;" class="me-1"></i> Upload Image
+                                                                        </label>
+                                                                        <input type="file" id="ps-cms-hero-file-input" class="d-none" accept="image/png,image/jpeg,image/webp,image/svg+xml" onchange="PlatformSettings.uploadHeroImage(this)">
+                                                                        <button type="button" class="ds-btn ds-btn-outline ds-btn-sm py-1.5 px-3" onclick="PlatformSettings.resetHeroImage()">
+                                                                            <i data-lucide="rotate-ccw" style="width:14px;height:14px;" class="me-1"></i> Reset to Default
+                                                                        </button>
+                                                                    </div>
+                                                                    <div class="mb-2">
+                                                                        <label class="form-label text-xxs text-secondary mb-1">Image URL (Direct Path or Uploaded Location):</label>
+                                                                        <input type="text" class="form-control form-control-sm text-xs" id="ps-cms-hero-image-url" placeholder="/assets/images/hero-mockup-default.png" oninput="PlatformSettings.previewHeroImageUrl(this.value)">
+                                                                    </div>
+                                                                    <div class="text-xxs text-muted">
+                                                                        Recommended size: 1000×680px or 16:9 ratio (PNG, JPG, WebP, SVG). Uploading an image replaces the mockup on the public landing page in real-time.
+                                                                    </div>
+                                                                </div>
+                                                            </div>
                                                         </div>
                                                     </div>
-                                                    <div class="col-md-4">
-                                                        <label class="form-label text-xs fw-semibold text-secondary uppercase">Stat 2 (Value & Label)</label>
-                                                        <div class="input-group">
-                                                            <input type="text" class="form-control" id="ps-cms-hero-stat2-val" placeholder="A+">
-                                                            <input type="text" class="form-control" id="ps-cms-hero-stat2-lbl" placeholder="Active Nodes">
-                                                        </div>
-                                                    </div>
-                                                    <div class="col-md-4">
-                                                        <label class="form-label text-xs fw-semibold text-secondary uppercase">Stat 3 (Value & Label)</label>
-                                                        <div class="input-group">
-                                                            <input type="text" class="form-control" id="ps-cms-hero-stat3-val" placeholder="1,204">
-                                                            <input type="text" class="form-control" id="ps-cms-hero-stat3-lbl" placeholder="+12 this hour">
-                                                        </div>
-                                                    </div>
-                                                    <div class="col-12 mt-2">
+                                                    <div class="col-12 mt-3">
                                                         <label class="form-label text-xs fw-bold text-secondary text-uppercase mb-1" style="letter-spacing:.05em;">Hero Highlights (Pill Badges)</label>
                                                     </div>
                                                     <div class="col-md-4">
@@ -6580,11 +6592,11 @@
 
     <script src="/assets/dist/bootstrap.bundle.min.js"></script>
     <script src="/assets/dist/chart.min.js"></script>
-    <script src="/assets/dist/core-bundle.2abaccd7.min.js"></script>
+    <script src="/assets/dist/core-bundle.4fed00f2.min.js"></script>
     <script src="/assets/dist/enterprise-analytics.015c477c.min.js"></script>
     <script src="/assets/dist/support-desk.7f2f8bf7.min.js"></script>
     <script src="/assets/dist/integrations.c8c8e530.min.js"></script>
-    <script src="/assets/dist/platform-settings.05729cbd.min.js"></script>
+    <script src="/assets/dist/platform-settings.a83f1558.min.js"></script>
     <script src="/assets/dist/super-admin.57ea10e5.min.js"></script>
     <script>
     if (typeof SupportDesk !== 'undefined') window.SupportDesk = SupportDesk;

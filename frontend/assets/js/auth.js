@@ -68,15 +68,393 @@ function _startLockoutCountdown(remainingSeconds, errorMsgEl, loginBtnEl) {
 }
 // ──────────────────────────────────────────────────────────────────────────────
 
+// ── Login Mode & State Management ─────────────────────────────────────────────
+let _currentLoginMode = 'password'; // 'password' or 'otp'
+let _otpStep = 1; // 1 = enter identifier, 2 = enter OTP
+let _otpCountdownTimer = null;
+let _savedOtpIdentifier = '';
+
+window.getLoginMode = function() {
+    return _currentLoginMode;
+};
+
+function _showAuthError(msg) {
+    const errorMsg = document.getElementById('errorMsg');
+    if (!errorMsg) return;
+    const span = errorMsg.querySelector('span');
+    if (span) span.textContent = msg;
+    else errorMsg.textContent = msg;
+    errorMsg.style.setProperty('display', 'flex', 'important');
+    const successMsg = document.getElementById('successMsg');
+    if (successMsg) successMsg.style.setProperty('display', 'none', 'important');
+}
+
+function _showAuthSuccess(msg) {
+    const successMsg = document.getElementById('successMsg');
+    if (!successMsg) return;
+    const span = successMsg.querySelector('span');
+    if (span) span.textContent = msg;
+    else successMsg.textContent = msg;
+    successMsg.style.setProperty('display', 'flex', 'important');
+    const errorMsg = document.getElementById('errorMsg');
+    if (errorMsg) errorMsg.style.setProperty('display', 'none', 'important');
+}
+
+function _clearAuthMessages() {
+    const errorMsg = document.getElementById('errorMsg');
+    if (errorMsg) errorMsg.style.setProperty('display', 'none', 'important');
+    const successMsg = document.getElementById('successMsg');
+    if (successMsg) successMsg.style.setProperty('display', 'none', 'important');
+}
+
+window.switchLoginMode = function(mode) {
+    _currentLoginMode = mode;
+    _clearAuthMessages();
+
+    const pwdContainer = document.getElementById('passwordFieldContainer');
+    const otpContainer = document.getElementById('otpCodeFieldContainer');
+    const identifierLabel = document.getElementById('identifierLabelText');
+    const usernameInput = document.getElementById('username');
+    const loginBtn = document.getElementById('loginBtn');
+    const pwdInput = document.getElementById('password');
+    const linkSignInWithOtp = document.getElementById('linkSignInWithOtp');
+    const linkSignInWithPassword = document.getElementById('linkSignInWithPassword');
+    const linkForgotPassword = document.getElementById('linkForgotPassword');
+
+    if (mode === 'otp') {
+        if (pwdContainer) pwdContainer.style.display = 'none';
+        if (pwdInput) pwdInput.removeAttribute('required');
+
+        if (linkSignInWithOtp) linkSignInWithOtp.style.display = 'none';
+        if (linkSignInWithPassword) linkSignInWithPassword.style.display = 'inline-block';
+        if (linkForgotPassword) linkForgotPassword.style.display = 'none';
+
+        if (identifierLabel) identifierLabel.textContent = 'Email ID or Phone Number';
+        if (usernameInput) usernameInput.placeholder = 'Enter registered Email ID or Phone Number';
+
+        window.resetOtpStep();
+    } else {
+        if (pwdContainer) pwdContainer.style.display = '';
+        if (otpContainer) otpContainer.style.display = 'none';
+        if (pwdInput) pwdInput.setAttribute('required', 'required');
+
+        if (linkSignInWithOtp) linkSignInWithOtp.style.display = 'inline-block';
+        if (linkSignInWithPassword) linkSignInWithPassword.style.display = 'none';
+        if (linkForgotPassword) linkForgotPassword.style.display = 'inline-block';
+
+        if (identifierLabel) identifierLabel.textContent = 'Email ID';
+        if (usernameInput) {
+            usernameInput.placeholder = 'Enter your Email ID';
+            usernameInput.removeAttribute('readonly');
+            usernameInput.removeAttribute('disabled');
+        }
+
+        if (loginBtn) {
+            loginBtn.disabled = false;
+            loginBtn.innerHTML = 'Sign In';
+        }
+
+        if (_otpCountdownTimer) {
+            clearInterval(_otpCountdownTimer);
+            _otpCountdownTimer = null;
+        }
+    }
+    if (window.lucide) lucide.createIcons();
+};
+
+window.resetOtpStep = function() {
+    _otpStep = 1;
+    _clearAuthMessages();
+    const otpContainer = document.getElementById('otpCodeFieldContainer');
+    const usernameInput = document.getElementById('username');
+    const loginBtn = document.getElementById('loginBtn');
+    const otpInput = document.getElementById('loginOtpInput');
+
+    if (otpContainer) otpContainer.style.display = 'none';
+    if (otpInput) otpInput.value = '';
+    if (usernameInput) {
+        usernameInput.removeAttribute('readonly');
+        usernameInput.removeAttribute('disabled');
+        usernameInput.focus();
+    }
+    if (loginBtn) {
+        loginBtn.disabled = false;
+        loginBtn.innerHTML = '<span style="display:flex;align-items:center;justify-content:center;gap:8px"><i data-lucide="send" style="width:16px;height:16px;"></i> Send OTP</span>';
+    }
+    if (_otpCountdownTimer) {
+        clearInterval(_otpCountdownTimer);
+        _otpCountdownTimer = null;
+    }
+    if (window.lucide) lucide.createIcons();
+};
+
+window.startOtpCountdown = function(seconds = 60) {
+    if (_otpCountdownTimer) clearInterval(_otpCountdownTimer);
+    let left = seconds;
+    const timerSec = document.getElementById('otpTimerSec');
+    const countdownTxt = document.getElementById('otpCountdownText');
+    const resendBtn = document.getElementById('btnResendOtp');
+
+    if (countdownTxt) countdownTxt.style.display = '';
+    if (resendBtn) resendBtn.style.display = 'none';
+    if (timerSec) timerSec.textContent = left;
+
+    _otpCountdownTimer = setInterval(() => {
+        left -= 1;
+        if (timerSec) timerSec.textContent = left;
+        if (left <= 0) {
+            clearInterval(_otpCountdownTimer);
+            _otpCountdownTimer = null;
+            if (countdownTxt) countdownTxt.style.display = 'none';
+            if (resendBtn) resendBtn.style.display = 'inline-block';
+        }
+    }, 1000);
+};
+
+window.resendLoginOtp = async function() {
+    const identifier = _savedOtpIdentifier || (document.getElementById('username')?.value || '').trim();
+    if (!identifier) {
+        _showAuthError('Please enter your Email ID or Phone Number.');
+        return;
+    }
+    const resendBtn = document.getElementById('btnResendOtp');
+    if (resendBtn) {
+        resendBtn.disabled = true;
+        resendBtn.textContent = 'Sending...';
+    }
+    try {
+        const res = await api.post('/auth/login-otp/send', { identifier });
+        _showAuthSuccess(res.msg || 'A new verification code has been dispatched.');
+        window.startOtpCountdown(60);
+    } catch (err) {
+        _showAuthError(err.message || 'Failed to resend code. Please try again.');
+        if (resendBtn) resendBtn.disabled = false;
+    }
+};
+
+/**
+ * Shared successful login processor across password and OTP auth
+ */
+function handleLoginSuccess(data, loginBtn) {
+    if (data.access_token) {
+        if (window.api) window.api.token = data.access_token;
+        sessionStorage.setItem('token', data.access_token);
+        sessionStorage.setItem('access_token', data.access_token);
+        localStorage.setItem('token', data.access_token);
+        localStorage.setItem('access_token', data.access_token);
+    }
+    sessionStorage.setItem('octaqube_authenticated', 'true');
+    localStorage.setItem('octaqube_authenticated', 'true');
+
+    localStorage.removeItem('octaqube_remember_me');
+    localStorage.removeItem('octaqube_remembered_username');
+
+    const userPayload = JSON.stringify(sanitizeUserForStorage({
+        username: data.username,
+        full_name: data.full_name || data.username,
+        profile_picture: data.profile_picture || null,
+        banner_image: data.banner_image || null,
+        email: data.email,
+        role: data.role,
+        role_name: data.role_name || data.role,
+        role_permissions: data.role_permissions || null,
+        org_id: data.org_id,
+        org_name: data.org_name,
+        dept_id: data.department_id || data.dept_id,
+        department_id: data.department_id || data.dept_id,
+        department: data.department || data.department_name,
+        department_name: data.department_name || data.department,
+        plant_id: data.plant_id,
+        plant_name: data.plant_name || data.location,
+        location: data.location || data.plant_name,
+        custom_fields: data.custom_fields || {},
+        sa_sub_role: data.sa_sub_role || (data.custom_fields && data.custom_fields.super_admin_role) || (data.role === 'SuperAdmin' ? 'Owner' : null),
+        subscription_plan: data.subscription_plan,
+        subscription_status: data.subscription_status,
+        id: data.id,
+        language: data.language,
+        org_timezone: data.org_timezone,
+        org_primary_color: data.org_primary_color || null,
+        org_logo_url: data.org_logo_url || null,
+        org_favicon_url: data.org_favicon_url || null
+    }));
+
+    if (data.is_temp_password) {
+        sessionStorage.setItem('qcms_pwd_reset_required', 'true');
+    } else {
+        sessionStorage.removeItem('qcms_pwd_reset_required');
+    }
+
+    sessionStorage.setItem('user', userPayload);
+    localStorage.setItem('user', userPayload);
+
+    if (data.role_permissions) {
+        sessionStorage.setItem('role_permissions', JSON.stringify(data.role_permissions));
+        localStorage.setItem('role_permissions', JSON.stringify(data.role_permissions));
+    }
+
+    const now = Date.now().toString();
+    sessionStorage.setItem('octaqube_last_activity', now);
+    localStorage.setItem('octaqube_last_activity', now);
+    
+    if (data.language) {
+        localStorage.setItem('octaqube-language', data.language);
+        sessionStorage.setItem('octaqube-language', data.language);
+        if (data.id || data.username) {
+            localStorage.setItem(`octaqube-language-${data.id || data.username}`, data.language);
+        }
+    }
+
+    if (loginBtn) {
+        loginBtn.disabled = true;
+        loginBtn.innerHTML = '<span style="display:flex;align-items:center;justify-content:center;gap:8px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation:spin 1s linear infinite"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>Redirecting to dashboard...</span>';
+    }
+
+    if (data.is_temp_password) {
+        window.location.replace('/auth/reset-password.html');
+        return;
+    }
+
+    const rawRole = data.role || data.role_name;
+    const normRole = (function(r) {
+        if (!r) return 'Team Member';
+        let roleStr = r;
+        if (typeof r === 'object') {
+            roleStr = r.name || r.role_name || r.role || '';
+        }
+        if (!roleStr || typeof roleStr !== 'string') return 'Team Member';
+        const clean = roleStr.trim().toLowerCase();
+        if (clean === 'superadmin' || clean === 'super admin' || clean === 'super_admin') return 'SuperAdmin';
+        if (clean === 'admin') return 'Admin';
+        if (clean === 'reviewer') return 'Reviewer';
+        if (clean === 'facilitator') return 'Facilitator';
+        if (clean === 'team leader' || clean === 'teamleader' || clean === 'team_leader') return 'Team Leader';
+        if (clean === 'team member' || clean === 'teammember' || clean === 'team_member') return 'Team Member';
+        if (clean === 'ceo') return 'CEO';
+        return roleStr;
+    })(rawRole);
+
+    const dashboardMap = {
+        'SuperAdmin': '/admin/super-admin.html',
+        'Admin': '/dashboard/dashboard-admin.html',
+        'Reviewer': '/dashboard/dashboard-reviewer.html',
+        'Facilitator': '/dashboard/dashboard-facilitator.html',
+        'Team Leader': '/dashboard/dashboard-team-member.html',
+        'Team Member': '/dashboard/dashboard-team-member.html',
+        'CEO': '/dashboard/dashboard-ceo.html'
+    };
+
+    const targetDashboard = dashboardMap[normRole] || '/dashboard/dashboard-team-member.html';
+    window.location.replace(targetDashboard);
+}
+
+// Auto-advance OTP input
+document.getElementById('loginOtpInput')?.addEventListener('input', (e) => {
+    e.target.value = e.target.value.replace(/\D/g, '');
+    if (e.target.value.length === 6) {
+        document.getElementById('loginForm')?.dispatchEvent(new Event('submit', { cancelable: true }));
+    }
+});
+
 document.getElementById('loginForm')?.addEventListener('submit', async (e) => {
     e.preventDefault();
-    // Block submission if account is still locked (countdown active)
     if (_lockoutTimer) return;
 
+    const errorMsg = document.getElementById('errorMsg');
+    const loginBtn = document.getElementById('loginBtn');
+
+    // ── OTP LOGIN WORKFLOW ───────────────────────────────────────────────────
+    if (_currentLoginMode === 'otp') {
+        if (_otpStep === 1) {
+            // STEP 1: Send OTP to Email or Phone
+            const identifier = (document.getElementById('username')?.value || '').trim();
+            if (!identifier) {
+                _showAuthError('Please enter your registered Email ID or Phone Number.');
+                return;
+            }
+
+            if (loginBtn) {
+                loginBtn.disabled = true;
+                loginBtn.innerHTML = '<span style="display:flex;align-items:center;justify-content:center;gap:8px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation:spin 1s linear infinite"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>Verifying & sending OTP...</span>';
+            }
+            _clearAuthMessages();
+
+            try {
+                const res = await api.post('/auth/login-otp/send', { identifier }, { button: null });
+                _savedOtpIdentifier = identifier;
+                _otpStep = 2;
+                _showAuthSuccess(res.msg || 'Verification code sent successfully.');
+                
+                const usernameInput = document.getElementById('username');
+                if (usernameInput) {
+                    usernameInput.setAttribute('readonly', 'true');
+                }
+
+                const otpContainer = document.getElementById('otpCodeFieldContainer');
+                if (otpContainer) otpContainer.style.display = 'block';
+
+                const hintEl = document.getElementById('otpDestinationHint');
+                if (hintEl && res.masked_destination) {
+                    hintEl.textContent = `Code sent to ${res.masked_destination}. Valid for 10 minutes.`;
+                }
+
+                window.startOtpCountdown(60);
+
+                if (loginBtn) {
+                    loginBtn.disabled = false;
+                    loginBtn.innerHTML = '<span style="display:flex;align-items:center;justify-content:center;gap:8px"><i data-lucide="check-circle" style="width:16px;height:16px;"></i> Verify & Sign In</span>';
+                }
+
+                const otpInput = document.getElementById('loginOtpInput');
+                if (otpInput) {
+                    otpInput.value = '';
+                    otpInput.focus();
+                }
+                if (window.lucide) lucide.createIcons();
+            } catch (err) {
+                if (loginBtn) {
+                    loginBtn.disabled = false;
+                    loginBtn.innerHTML = '<span style="display:flex;align-items:center;justify-content:center;gap:8px"><i data-lucide="send" style="width:16px;height:16px;"></i> Send OTP</span>';
+                }
+                _showAuthError(err.message || 'No registered account found with this email or phone number.');
+                if (window.lucide) lucide.createIcons();
+            }
+            return;
+        } else {
+            // STEP 2: Verify OTP
+            const identifier = _savedOtpIdentifier || (document.getElementById('username')?.value || '').trim();
+            const otp = (document.getElementById('loginOtpInput')?.value || '').trim();
+
+            if (!otp || otp.length < 6) {
+                _showAuthError('Please enter the full 6-digit verification code.');
+                return;
+            }
+
+            if (loginBtn) {
+                loginBtn.disabled = true;
+                loginBtn.innerHTML = '<span style="display:flex;align-items:center;justify-content:center;gap:8px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation:spin 1s linear infinite"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>Verifying code...</span>';
+            }
+            _clearAuthMessages();
+
+            try {
+                const data = await api.post('/auth/login-otp/verify', { identifier, otp, remember_me: false }, { button: null });
+                handleLoginSuccess(data, loginBtn);
+            } catch (err) {
+                if (loginBtn) {
+                    loginBtn.disabled = false;
+                    loginBtn.innerHTML = '<span style="display:flex;align-items:center;justify-content:center;gap:8px"><i data-lucide="check-circle" style="width:16px;height:16px;"></i> Verify & Sign In</span>';
+                }
+                _showAuthError(err.message || 'Invalid or expired verification code.');
+                if (window.lucide) lucide.createIcons();
+            }
+            return;
+        }
+    }
+
+    // ── PASSWORD LOGIN WORKFLOW ──────────────────────────────────────────────
     const username = (document.getElementById('username')?.value || '').trim();
     const password = document.getElementById('password')?.value || '';
     const rememberMe = false;
-    const errorMsg = document.getElementById('errorMsg');
 
     let isLoggingIn = false;
     const attemptLogin = async (isRetry = false) => {
@@ -84,18 +462,11 @@ document.getElementById('loginForm')?.addEventListener('submit', async (e) => {
         isLoggingIn = true;
         let isTimeout = false;
         let loginSuccess = false;
-        const loginBtn = document.getElementById('loginBtn');
 
         try {
             if (isRetry) {
                 if (loginBtn) loginBtn.innerHTML = '<span style="display:flex;align-items:center;justify-content:center;gap:8px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation:spin 1s linear infinite"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>Retrying...</span>';
-                if (errorMsg) {
-                    const span = errorMsg.querySelector('span');
-                    const msg = 'Server is warming up, retrying now...';
-                    if (span) span.textContent = msg;
-                    else errorMsg.textContent = msg;
-                    errorMsg.style.setProperty('display', 'flex', 'important');
-                }
+                _showAuthError('Server is warming up, retrying now...');
             } else if (loginBtn) {
                 loginBtn.disabled = true;
                 loginBtn.innerHTML = '<span style="display:flex;align-items:center;justify-content:center;gap:8px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation:spin 1s linear infinite"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>Authenticating...</span>';
@@ -105,124 +476,8 @@ document.getElementById('loginForm')?.addEventListener('submit', async (e) => {
             if (!data || (!data.access_token && !data.id && !data.username)) {
                 throw new Error(data?.msg || data?.message || "Invalid username or password");
             }
-            if (data.access_token) {
-                if (window.api) window.api.token = data.access_token;
-                sessionStorage.setItem('token', data.access_token);
-                sessionStorage.setItem('access_token', data.access_token);
-                localStorage.setItem('token', data.access_token);
-                localStorage.setItem('access_token', data.access_token);
-            }
-            sessionStorage.setItem('octaqube_authenticated', 'true');
-            localStorage.setItem('octaqube_authenticated', 'true');
-
-            localStorage.removeItem('octaqube_remember_me');
-            localStorage.removeItem('octaqube_remembered_username');
-
-            const userPayload = JSON.stringify(sanitizeUserForStorage({
-                username: data.username,
-                full_name: data.full_name || data.username,
-                profile_picture: data.profile_picture || null,
-                banner_image: data.banner_image || null,
-                email: data.email,
-                role: data.role,
-                role_name: data.role_name || data.role,
-                role_permissions: data.role_permissions || null,
-                org_id: data.org_id,
-                org_name: data.org_name,
-                dept_id: data.department_id || data.dept_id,
-                department_id: data.department_id || data.dept_id,
-                department: data.department || data.department_name,
-                department_name: data.department_name || data.department,
-                plant_id: data.plant_id,
-                plant_name: data.plant_name || data.location,
-                location: data.location || data.plant_name,
-                custom_fields: data.custom_fields || {},
-                sa_sub_role: data.sa_sub_role || (data.custom_fields && data.custom_fields.super_admin_role) || (data.role === 'SuperAdmin' ? 'Owner' : null),
-                subscription_plan: data.subscription_plan,
-                subscription_status: data.subscription_status,
-                id: data.id,
-                language: data.language,
-                org_timezone: data.org_timezone,
-                org_primary_color: data.org_primary_color || null,
-                org_logo_url: data.org_logo_url || null,
-                org_favicon_url: data.org_favicon_url || null
-            }));
-
-            // Store temp-password flag separately (not inside the user object)
-            // so it is not persisted as clear-text sensitive data inside the
-            // user record. It is cleared once the user resets their password.
-            if (data.is_temp_password) {
-                sessionStorage.setItem('qcms_pwd_reset_required', 'true');
-            } else {
-                sessionStorage.removeItem('qcms_pwd_reset_required');
-            }
-
-            sessionStorage.setItem('user', userPayload);
-            localStorage.setItem('user', userPayload);
-
-            if (data.role_permissions) {
-                sessionStorage.setItem('role_permissions', JSON.stringify(data.role_permissions));
-                localStorage.setItem('role_permissions', JSON.stringify(data.role_permissions));
-            }
-
-            const now = Date.now().toString();
-            sessionStorage.setItem('octaqube_last_activity', now);
-            localStorage.setItem('octaqube_last_activity', now);
-            
-            // Sync global language without triggering async setLanguage reload
-            if (data.language) {
-                localStorage.setItem('octaqube-language', data.language);
-                sessionStorage.setItem('octaqube-language', data.language);
-                if (data.id || data.username) {
-                    localStorage.setItem(`octaqube-language-${data.id || data.username}`, data.language);
-                }
-            }
-
             loginSuccess = true;
-            if (loginBtn) {
-                loginBtn.disabled = true;
-                loginBtn.innerHTML = '<span style="display:flex;align-items:center;justify-content:center;gap:8px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation:spin 1s linear infinite"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>Redirecting to dashboard...</span>';
-            }
-
-            if (data.is_temp_password) {
-                window.location.replace('/auth/reset-password.html');
-                return;
-            }
-
-            // Role-based redirection with normalization
-            const rawRole = data.role || data.role_name;
-            const normRole = (function(r) {
-                if (!r) return 'Team Member';
-                let roleStr = r;
-                if (typeof r === 'object') {
-                    roleStr = r.name || r.role_name || r.role || '';
-                }
-                if (!roleStr || typeof roleStr !== 'string') return 'Team Member';
-                const clean = roleStr.trim().toLowerCase();
-                if (clean === 'superadmin' || clean === 'super admin' || clean === 'super_admin') return 'SuperAdmin';
-                if (clean === 'admin') return 'Admin';
-                if (clean === 'reviewer') return 'Reviewer';
-                if (clean === 'facilitator') return 'Facilitator';
-                if (clean === 'team leader' || clean === 'teamleader' || clean === 'team_leader') return 'Team Leader';
-                if (clean === 'team member' || clean === 'teammember' || clean === 'team_member') return 'Team Member';
-                if (clean === 'ceo') return 'CEO';
-                return roleStr;
-            })(rawRole);
-
-            const dashboardMap = {
-                'SuperAdmin': '/admin/super-admin.html',
-                'Admin': '/dashboard/dashboard-admin.html',
-                'Reviewer': '/dashboard/dashboard-reviewer.html',
-                'Facilitator': '/dashboard/dashboard-facilitator.html',
-                'Team Leader': '/dashboard/dashboard-team-member.html',
-                'Team Member': '/dashboard/dashboard-team-member.html',
-                'CEO': '/dashboard/dashboard-ceo.html'
-            };
-
-            const targetDashboard = dashboardMap[normRole] || '/dashboard/dashboard-team-member.html';
-            
-            // Cleanly replace location to prevent history bounce
-            window.location.replace(targetDashboard);
+            handleLoginSuccess(data, loginBtn);
         } catch (err) {
             isLoggingIn = false;
             if (err.isTimeout) {
@@ -230,33 +485,20 @@ document.getElementById('loginForm')?.addEventListener('submit', async (e) => {
             }
             // On first timeout, auto-retry once after 15 seconds
             if (err.isTimeout && !isRetry) {
-                if (errorMsg) {
-                    const span = errorMsg.querySelector('span');
-                    const msg = '⏳ Server is warming up. Auto-retrying in 15 seconds...';
-                    if (span) span.textContent = msg;
-                    else errorMsg.textContent = msg;
-                    errorMsg.style.setProperty('display', 'flex', 'important');
-                }
+                _showAuthError('⏳ Server is warming up. Auto-retrying in 15 seconds...');
                 if (loginBtn) loginBtn.innerHTML = '<span style="display:flex;align-items:center;justify-content:center;gap:8px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation:spin 1s linear infinite"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>Warming up...</span>';
                 setTimeout(() => attemptLogin(true), 15000);
                 return;
             }
 
-            // ── ACCOUNT_LOCKED: show countdown ───────────────────────────────
             if (err.error_code === 'ACCOUNT_LOCKED' || (err.status === 429 && err.message && err.message.toLowerCase().includes('locked'))) {
-                const remaining = err.remaining_seconds || 900; // fallback 15 min
+                const remaining = err.remaining_seconds || 900;
                 _startLockoutCountdown(remaining, errorMsg, loginBtn);
-                return; // Don't fall through to the generic handler
+                return;
             }
-            // ────────────────────────────────────────────────────────────────
 
-            if (errorMsg) {
-                const span = errorMsg.querySelector('span');
-                const displayTxt = (err.message && err.message !== 'API Error' && err.message !== 'Request failed. Please try again.') ? err.message : 'Invalid username or password';
-                if (span) span.textContent = displayTxt;
-                else errorMsg.textContent = displayTxt;
-                errorMsg.style.setProperty('display', 'flex', 'important');
-            }
+            const displayTxt = (err.message && err.message !== 'API Error' && err.message !== 'Request failed. Please try again.') ? err.message : 'Invalid username or password';
+            _showAuthError(displayTxt);
         } finally {
             if (!loginSuccess && (!isTimeout || isRetry) && !_lockoutTimer) {
                 isLoggingIn = false;
@@ -273,7 +515,6 @@ document.getElementById('loginForm')?.addEventListener('submit', async (e) => {
 
     await attemptLogin();
 });
-
 
 // Registration Logic
 document.getElementById('registerForm')?.addEventListener('submit', async (e) => {

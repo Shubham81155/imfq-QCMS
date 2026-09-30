@@ -1917,7 +1917,7 @@ const AnnouncementsModule = {
 
             const cardsHtml = rules.length ? rules.map(rule => {
                 const catInfo = categoryMap[rule.category] || categoryMap['custom'];
-                const isInstant = (!rule.trigger_days_before || rule.trigger_days_before === 0 || ['payment_approved', 'payment_rejected', 'project_assigned', 'project_completed', 'new_org_welcome', 'new_user_welcome', 'password_reset_otp'].includes(rule.event_trigger));
+                const isInstant = (!rule.trigger_days_before || rule.trigger_days_before === 0 || ['payment_approved', 'payment_rejected', 'project_assigned', 'project_completed', 'new_org_welcome', 'new_user_welcome', 'password_reset_otp', 'login_otp'].includes(rule.event_trigger));
                 const triggerBadge = rule.trigger_type === 'event' 
                     ? (isInstant 
                         ? `<span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1"><i data-lucide="zap" style="width:11px;height:11px;" class="me-1"></i>Immediate Dispatch</span>`
@@ -2541,6 +2541,7 @@ const AnnouncementsModule = {
                                                     <label class="ds-label text-xxs">Automated Event Trigger</label>
                                                     <select class="ds-input text-xs" id="enEventTrigger">
                                                         <option value="password_reset_otp" ${ruleData.event_trigger === 'password_reset_otp' ? 'selected' : ''}>Password Reset OTP Verification</option>
+                                                        <option value="login_otp" ${ruleData.event_trigger === 'login_otp' ? 'selected' : ''}>Login OTP Verification</option>
                                                         <option value="payment_approved" ${ruleData.event_trigger === 'payment_approved' ? 'selected' : ''}>Subscription Purchased / Activated</option>
                                                         <option value="payment_rejected" ${ruleData.event_trigger === 'payment_rejected' ? 'selected' : ''}>Offline Payment Declined</option>
                                                         <option value="subscription_expiring_soon" ${ruleData.event_trigger === 'subscription_expiring_soon' ? 'selected' : ''}>Subscription Expiring Soon</option>
@@ -2823,6 +2824,7 @@ const AnnouncementsModule = {
 
             const categoryMap = {
                 'password_reset_otp': { label: 'Password Reset OTP', color: '#2563eb', bg: 'rgba(37,99,235,0.1)', icon: 'key-round' },
+                'login_otp': { label: 'Login OTP Verification', color: '#2563eb', bg: 'rgba(37,99,235,0.1)', icon: 'log-in' },
                 'phone_otp_verification': { label: 'Auth & Verification', color: '#2563eb', bg: 'rgba(37,99,235,0.1)', icon: 'shield-check' },
                 'subscription_reminder_7d': { label: 'Subscription Expiry', color: '#2563eb', bg: 'rgba(37,99,235,0.1)', icon: 'clock' },
                 'subscription_urgent_1d': { label: 'Urgent Expiry Notice', color: '#dc2626', bg: 'rgba(220,38,38,0.1)', icon: 'alert-octagon' },
@@ -3381,6 +3383,7 @@ const AnnouncementsModule = {
                                                 <label class="ds-label text-xxs fw-semibold mb-1">Automated Event Trigger</label>
                                                 <select class="ds-input text-xs py-1" id="smsModal_EventTrigger">
                                                     <option value="password_reset_otp" ${tmplData.event_trigger === 'password_reset_otp' ? 'selected' : ''}>Password Reset OTP Verification</option>
+                                                    <option value="login_otp" ${tmplData.event_trigger === 'login_otp' ? 'selected' : ''}>Login OTP Verification</option>
                                                     <option value="phone_otp_verification" ${tmplData.event_trigger === 'phone_otp_verification' ? 'selected' : ''}>Phone OTP Verification</option>
                                                     <option value="subscription_expiring_soon" ${tmplData.event_trigger === 'subscription_expiring_soon' ? 'selected' : ''}>Subscription Expiring Soon</option>
                                                     <option value="trial_expiring_soon" ${tmplData.event_trigger === 'trial_expiring_soon' ? 'selected' : ''}>Trial Plan Ending Soon</option>

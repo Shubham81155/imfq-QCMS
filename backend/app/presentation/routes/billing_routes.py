@@ -793,7 +793,7 @@ def get_public_payment_gateways():
 @billing_bp.route('/razorpay/create-order', methods=['POST'])
 @jwt_required()
 def create_razorpay_order():
-    """Create Razorpay order for plan upgrade"""
+    """Create Razorpay order for plan upgrade or invoice payment"""
     data = request.json or {}
     plan_name = data.get('plan_name')
     is_valid, resolved_name, base_price, total_price, max_users, max_projects, cycle = _get_plan_details(plan_name)
@@ -829,6 +829,22 @@ def create_razorpay_order():
                 "message": f"Cannot purchase '{resolved_name}'. Your organization currently uses {used_storage_gb:.2f} GB of data, which exceeds this plan's storage limit of {plan_storage_gb:.1f} GB. Please choose a plan supporting at least {used_storage_gb:.2f} GB."
             }), 400
 
+    custom_amount = data.get('amount')
+    invoice_id = data.get('invoice_id')
+    if invoice_id and org_id:
+        target_inv = SubscriptionInvoice.query.filter_by(id=invoice_id, org_id=org_id).first()
+        if not target_inv:
+            target_inv = SubscriptionInvoice.query.filter_by(invoice_number=str(invoice_id), org_id=org_id).first()
+        if target_inv and target_inv.total_amount:
+            total_price = float(target_inv.total_amount)
+            base_price = round(total_price / 1.18, 2)
+    elif custom_amount:
+        try:
+            total_price = float(custom_amount)
+            base_price = round(total_price / 1.18, 2)
+        except Exception:
+            pass
+
     gst = total_price - base_price
 
     order_id = f"order_{secrets.token_hex(8)}"
@@ -846,7 +862,7 @@ def create_razorpay_order():
 @billing_bp.route('/razorpay/verify-payment', methods=['POST'])
 @jwt_required()
 def verify_razorpay_payment():
-    """Verify Razorpay payment and immediately upgrade subscription plan"""
+    """Verify Razorpay payment and immediately upgrade subscription plan / mark invoice Paid"""
     user = _get_current_user()
     org_id = _get_effective_org_id(user)
     if not user or not org_id:
@@ -869,6 +885,29 @@ def verify_razorpay_payment():
     ok, err = _require_gst_pan(org)
     if not ok:
         return err
+
+    invoice_id = data.get('invoice_id')
+    custom_amount = data.get('amount')
+    target_inv = None
+    if invoice_id:
+        target_inv = SubscriptionInvoice.query.filter_by(id=invoice_id, org_id=org_id).first()
+        if not target_inv:
+            target_inv = SubscriptionInvoice.query.filter_by(invoice_number=str(invoice_id), org_id=org_id).first()
+    if not target_inv:
+        # Check for outstanding metered invoice
+        target_inv = SubscriptionInvoice.query.filter_by(org_id=org_id)\
+            .filter(SubscriptionInvoice.invoice_status.in_(['Sent', 'SENT', 'Overdue', 'OVERDUE', 'Pending Verification', 'Issued']))\
+            .order_by(SubscriptionInvoice.created_at.desc()).first()
+
+    if target_inv and target_inv.total_amount:
+        total_price = float(target_inv.total_amount)
+        base_price = round(total_price / 1.18, 2)
+    elif custom_amount:
+        try:
+            total_price = float(custom_amount)
+            base_price = round(total_price / 1.18, 2)
+        except Exception:
+            pass
 
     gst = total_price - base_price
 
@@ -894,13 +933,46 @@ def verify_razorpay_payment():
         billing_period_end=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=365 if cycle in ('Yearly', 'Annual') else 30)
     )
     db.session.add(payment)
+    db.session.flush()
+
+    if target_inv:
+        target_inv.invoice_status = 'Paid'
+        target_inv.payment_id = payment.id
+        payment.invoice_id = target_inv.id
+    else:
+        # Record matching SubscriptionInvoice with Paid status
+        inv_date = datetime.now(timezone.utc).replace(tzinfo=None)
+        inv_num = f"INV/{inv_date.strftime('%Y%m')}/{org.id:04d}-{payment.id:04d}"
+        invoice = SubscriptionInvoice(
+            org_id=org.id,
+            invoice_number=inv_num,
+            invoice_uid=f"INV-RZP-{payment.id}",
+            plan_name=resolved_name,
+            billing_cycle=cycle,
+            base_amount=base_price,
+            discount_amount=0.0,
+            gst_percent=18.0,
+            gst_amount=gst,
+            total_amount=total_price,
+            currency='INR',
+            invoice_status='Paid',
+            invoice_type='subscription',
+            payment_id=payment.id,
+            invoice_date=inv_date,
+            due_date=inv_date,
+            billing_period_start=payment.billing_period_start,
+            billing_period_end=payment.billing_period_end
+        )
+        db.session.add(invoice)
+        db.session.flush()
+        payment.invoice_id = invoice.id
 
     # Add notification for org admin
     notif = Notification(
         org_id=org_id,
         user_id=user.id,
         title="Subscription Plan Upgraded",
-        message=f"Your subscription plan has been successfully upgraded to {resolved_name} via Razorpay."
+        message=f"Your subscription payment has been successfully verified via Razorpay ({resolved_name})."
     )
     db.session.add(notif)
     db.session.commit()
@@ -964,6 +1036,34 @@ def submit_offline_payment_proof():
 
     if not transaction_id or not transaction_id.strip():
         return jsonify({"message": "Transaction ID / UTR is required"}), 400
+
+    invoice_id = request.form.get('invoice_id')
+    custom_amount = request.form.get('amount')
+
+    target_inv = None
+    if invoice_id:
+        target_inv = SubscriptionInvoice.query.filter_by(id=invoice_id, org_id=org_id).first()
+        if not target_inv:
+            target_inv = SubscriptionInvoice.query.filter_by(invoice_number=str(invoice_id), org_id=org_id).first()
+    if not target_inv:
+        # Check for outstanding metered or sent invoice for this org
+        target_inv = SubscriptionInvoice.query.filter_by(org_id=org_id)\
+            .filter(SubscriptionInvoice.invoice_status.in_(['Sent', 'SENT', 'Overdue', 'OVERDUE', 'Issued']))\
+            .order_by(SubscriptionInvoice.created_at.desc()).first()
+
+    if target_inv and target_inv.total_amount:
+        target_inv.invoice_status = 'Pending Verification'
+        total_price = float(target_inv.total_amount)
+        inv_tag = f"[Invoice: {target_inv.invoice_number or target_inv.id}]"
+        if not notes:
+            notes = inv_tag
+        elif inv_tag not in notes:
+            notes = f"{inv_tag} {notes}"
+    elif custom_amount:
+        try:
+            total_price = float(custom_amount)
+        except Exception:
+            pass
 
     screenshot_url = None
     if 'file' in request.files:
@@ -1145,32 +1245,50 @@ def approve_offline_payment(proof_id):
     db.session.add(payment)
     db.session.flush()
 
-    # Record matching SubscriptionInvoice with Paid status
-    inv_date = proof.created_at or datetime.now(timezone.utc).replace(tzinfo=None)
-    inv_num = f"INV/{inv_date.strftime('%Y%m')}/{org.id:04d}-{payment.id:04d}"
-    invoice = SubscriptionInvoice(
-        org_id=org.id,
-        invoice_number=inv_num,
-        invoice_uid=f"INV-OFFLINE-{proof.id}",
-        plan_name=resolved_name,
-        billing_cycle=proof.billing_cycle or cycle,
-        base_amount=base_price,
-        discount_amount=0.0,
-        gst_percent=18.0,
-        gst_amount=gst,
-        total_amount=total_price,
-        currency=proof.currency or 'INR',
-        invoice_status='Paid',
-        invoice_type='subscription',
-        payment_id=payment.id,
-        invoice_date=inv_date,
-        due_date=inv_date,
-        billing_period_start=payment.billing_period_start,
-        billing_period_end=payment.billing_period_end
-    )
-    db.session.add(invoice)
-    db.session.flush()
-    payment.invoice_id = invoice.id
+    # Record matching SubscriptionInvoice with Paid status or update existing outstanding invoice
+    target_inv = None
+    import re
+    inv_match = re.search(r'\[Invoice:\s*([^\]]+)\]', proof.notes or '')
+    if inv_match:
+        inv_ref = inv_match.group(1).strip()
+        target_inv = SubscriptionInvoice.query.filter_by(org_id=org.id)\
+            .filter((SubscriptionInvoice.invoice_number == inv_ref) | (SubscriptionInvoice.invoice_uid == inv_ref) | (SubscriptionInvoice.id == inv_ref)).first()
+
+    if not target_inv:
+        target_inv = SubscriptionInvoice.query.filter_by(org_id=org.id)\
+            .filter(SubscriptionInvoice.invoice_status.in_(['Pending Verification', 'Sent', 'SENT', 'Overdue', 'OVERDUE', 'Issued']))\
+            .order_by(SubscriptionInvoice.created_at.desc()).first()
+
+    if target_inv:
+        target_inv.invoice_status = 'Paid'
+        target_inv.payment_id = payment.id
+        payment.invoice_id = target_inv.id
+    else:
+        inv_date = proof.created_at or datetime.now(timezone.utc).replace(tzinfo=None)
+        inv_num = f"INV/{inv_date.strftime('%Y%m')}/{org.id:04d}-{payment.id:04d}"
+        invoice = SubscriptionInvoice(
+            org_id=org.id,
+            invoice_number=inv_num,
+            invoice_uid=f"INV-OFFLINE-{proof.id}",
+            plan_name=resolved_name,
+            billing_cycle=proof.billing_cycle or cycle,
+            base_amount=base_price,
+            discount_amount=0.0,
+            gst_percent=18.0,
+            gst_amount=gst,
+            total_amount=total_price,
+            currency=proof.currency or 'INR',
+            invoice_status='Paid',
+            invoice_type='subscription',
+            payment_id=payment.id,
+            invoice_date=inv_date,
+            due_date=inv_date,
+            billing_period_start=payment.billing_period_start,
+            billing_period_end=payment.billing_period_end
+        )
+        db.session.add(invoice)
+        db.session.flush()
+        payment.invoice_id = invoice.id
 
     # Notify Org Admin
     db.session.add(Notification(
@@ -1220,6 +1338,11 @@ def reject_offline_payment(proof_id):
     proof.rejection_reason = reason
     proof.verified_by_id = int(sa_user_id)
     proof.verified_at = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    # Revert any invoice that was placed into Pending Verification back to Sent
+    inv_pending = SubscriptionInvoice.query.filter_by(org_id=proof.org_id, invoice_status='Pending Verification').all()
+    for inv in inv_pending:
+        inv.invoice_status = 'Sent'
 
     # Notify Org Admin
     db.session.add(Notification(

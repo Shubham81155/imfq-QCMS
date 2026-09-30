@@ -286,6 +286,49 @@
             border: 1px solid rgba(255, 255, 255, 0.15) !important;
             box-shadow: none !important;
         }
+
+        /* Pricing Section Level Alignment & Featured Button Styling */
+        #pricing .row {
+            align-items: stretch;
+        }
+        #pricing .feature-card {
+            display: flex !important;
+            flex-direction: column !important;
+            height: 100% !important;
+        }
+        #pricing .feature-card ul {
+            flex-grow: 1 !important;
+            margin-bottom: 2rem !important;
+        }
+        #pricing .feature-card .ds-btn,
+        #pricing .feature-card .pricing-btn-featured {
+            margin-top: auto !important;
+            min-height: 48px !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+        }
+        #pricing .ds-btn-primary,
+        #pricing .pricing-btn-featured,
+        .pricing-btn-featured {
+            background: #2563eb !important;
+            border: 1px solid #2563eb !important;
+            color: #ffffff !important;
+            font-weight: 600 !important;
+            border-radius: 12px !important;
+            box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35) !important;
+            transition: all 0.2s ease !important;
+        }
+        #pricing .ds-btn-primary:hover,
+        #pricing .pricing-btn-featured:hover,
+        .pricing-btn-featured:hover {
+            background: #1d4ed8 !important;
+            border-color: #1d4ed8 !important;
+            color: #ffffff !important;
+            box-shadow: 0 6px 20px rgba(37, 99, 235, 0.45) !important;
+            transform: translateY(-1px) !important;
+        }
+
     </style>
 </head>
 
@@ -346,90 +389,13 @@
                     </div>
                 </div>
                 <div class="col-lg-6 d-none d-lg-block fade-in" style="animation-delay: 0.2s;">
-                    <div class="position-relative">
-                        <!-- Mockup Image / Illustration -->
-                        <div class="hero-mockup-window"
-                            style="padding: 20px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); border: 1px solid rgba(255,255,255,0.18) !important; background: rgba(0, 35, 71, 0.95) !important; border-radius: 16px;">
-                            <div class="d-flex gap-2 mb-3">
-                                <div style="width:12px; height:12px; border-radius:50%; background:#ff5f56; opacity:0.9;"></div>
-                                <div style="width:12px; height:12px; border-radius:50%; background:#ffbd2e; opacity:0.9;"></div>
-                                <div style="width:12px; height:12px; border-radius:50%; background:#27c93f; opacity:0.9;"></div>
-                            </div>
-                            <div style="height: 380px; background: rgba(0, 15, 35, 0.7); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; display: flex; flex-direction: column; overflow: hidden;">
-                                <div class="p-3 border-bottom d-flex gap-3"
-                                    style="border-color: rgba(255,255,255,0.08) !important;">
-                                    <div style="width:120px; height:10px; background:rgba(255,255,255,0.25); border-radius:5px;"></div>
-                                    <div style="width:80px; height:10px; background:rgba(255,255,255,0.15); border-radius:5px;"></div>
-                                </div>
-                                <div class="p-3 d-flex flex-wrap gap-3">
-                                    <div class="hero-mockup-card p-3" style="width:30%; height:110px; border-radius:12px; background:rgba(255,255,255,0.07) !important; border:1px solid rgba(255,255,255,0.15) !important;">
-                                        <div class="text-xxs fw-bold uppercase mb-2" style="color:#DAE0E7 !important; opacity:0.9; font-size:11px; letter-spacing:0.04em;" id="lp-hero-stat1-lbl">Efficiency</div>
-                                        <div class="fs-4 fw-black" style="color:#10B981 !important; font-weight:800;" id="lp-hero-stat1-val">98.2%</div>
-                                        <div class="progress mt-2" style="height:4px; background: rgba(255,255,255,0.15);">
-                                            <div class="progress-bar" style="width: 98%; background:#10B981;"></div>
-                                        </div>
-                                    </div>
-                                    <div class="hero-mockup-card p-3" style="width:30%; height:110px; border-radius:12px; background:rgba(255,255,255,0.07) !important; border:1px solid rgba(255,255,255,0.15) !important;">
-                                        <div class="text-xxs fw-bold uppercase mb-2" style="color:#DAE0E7 !important; opacity:0.9; font-size:11px; letter-spacing:0.04em;" id="lp-hero-stat2-lbl">Quality Score</div>
-                                        <div class="fs-4 fw-black" style="color:#C4A25A !important; font-weight:800;" id="lp-hero-stat2-val">A+</div>
-                                        <div class="d-flex gap-1 mt-2">
-                                            <div style="width:15px; height:4px; background:#C4A25A; border-radius:2px;"></div>
-                                            <div style="width:15px; height:4px; background:#C4A25A; border-radius:2px;"></div>
-                                            <div style="width:15px; height:4px; background:#C4A25A; border-radius:2px;"></div>
-                                        </div>
-                                    </div>
-                                    <div class="hero-mockup-card p-3" style="width:30%; height:110px; border-radius:12px; background:rgba(255,255,255,0.07) !important; border:1px solid rgba(255,255,255,0.15) !important;">
-                                        <div class="text-xxs fw-bold uppercase mb-2" style="color:#DAE0E7 !important; opacity:0.9; font-size:11px; letter-spacing:0.04em;" id="lp-hero-stat3-lbl">Active Nodes</div>
-                                        <div class="fs-4 fw-black" style="color:#FFFFFF !important; font-weight:800;" id="lp-hero-stat3-val">1,204</div>
-                                        <div class="text-xxs mt-1" style="color:#C4A25A !important; font-weight:600;" id="lp-hero-stat3-sub">+12 this hour</div>
-                                    </div>
-                                    <div class="hero-mockup-card p-4" style="width:100%; height:190px; border-radius:12px; background:rgba(255,255,255,0.07) !important; border:1px solid rgba(255,255,255,0.15) !important;">
-                                        <div class="d-flex justify-content-between align-items-center mb-4">
-                                            <div class="fw-bold fs-6" style="color:#FFFFFF !important; font-size:15px; letter-spacing: -0.01em;">Global Quality Pipeline</div>
-                                            <div class="eyebrow-chip-hero mb-0" style="padding: 3px 12px; font-size: 11px; background: rgba(196, 162, 90, 0.18) !important; color: #C4A25A !important; border: 1px solid rgba(196, 162, 90, 0.35) !important; border-radius: 9999px; font-weight: 600;">Real-time</div>
-                                        </div>
-                                        <div class="d-flex flex-column gap-3">
-                                            <div class="d-flex align-items-center gap-3">
-                                                <div style="width:50px; height:8px; background:rgba(255,255,255,0.25); border-radius:4px;"></div>
-                                                <div class="flex-grow-1" style="height:8px; background:rgba(255,255,255,0.1); border-radius:4px; overflow:hidden;">
-                                                    <div style="width:85%; height:100%; background:#C4A25A;"></div>
-                                                </div>
-                                            </div>
-                                            <div class="d-flex align-items-center gap-3">
-                                                <div style="width:50px; height:8px; background:rgba(255,255,255,0.25); border-radius:4px;"></div>
-                                                <div class="flex-grow-1" style="height:8px; background:rgba(255,255,255,0.1); border-radius:4px; overflow:hidden;">
-                                                    <div style="width:60%; height:100%; background:#10B981;"></div>
-                                                </div>
-                                            </div>
-                                            <div class="d-flex align-items-center gap-3">
-                                                <div style="width:50px; height:8px; background:rgba(255,255,255,0.25); border-radius:4px;"></div>
-                                                <div class="flex-grow-1" style="height:8px; background:rgba(255,255,255,0.1); border-radius:4px; overflow:hidden;">
-                                                    <div style="width:95%; height:100%; background:#C4A25A;"></div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        <!-- Floating Activity Notification -->
-                        <div class="position-absolute"
-                            style="top: 40px; left: -40px; background: #FFFFFF; padding: 12px 20px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.12); border: 1px solid #DAE0E7; animation: float 3s ease-in-out infinite;">
-                            <div class="d-flex align-items-center gap-3">
-                                <div class="bg-success rounded-circle"
-                                    style="width:8px; height:8px; box-shadow: 0 0 10px #10B981;"></div>
-                                <div class="d-flex flex-column">
-                                    <span class="fw-bold text-xs" style="color:#002347;">New Quality Audit</span>
-                                    <span class="text-xxs fw-medium" style="color:#476585;">Plant #124 • 2m ago</span>
-                                </div>
-                            </div>
-                        </div>
-                        <!-- Floating Badge -->
-                        <div class="position-absolute"
-                            style="bottom: -20px; right: -20px; background: #C4A25A; color: #002347; padding: 12px 24px; border-radius: 12px; font-weight: 700; box-shadow: 0 8px 24px -6px rgba(196, 162, 90, 0.45); display: flex; align-items: center; gap: 8px;">
-                            <i data-lucide="award" style="width:20px; height:20px;"></i>
-                            <span>ISO 9001 Verified</span>
-                        </div>
+                    <div class="position-relative hero-image-container d-flex align-items-center justify-content-center">
+                        <img id="lp-hero-image" 
+                             src="/assets/images/hero-mockup-default.png" 
+                             alt="QCMS Quality Management Platform Mockup" 
+                             class="img-fluid hero-mockup-img" 
+                             style="max-width: 100%; height: auto; border-radius: 16px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6); border: 1px solid rgba(255,255,255,0.15); transition: transform 0.3s ease, box-shadow 0.3s ease;"
+                             onerror="this.onerror=null; this.src='/assets/images/hero-mockup-default.png';" />
                     </div>
                 </div>
             </div>
@@ -531,43 +497,55 @@
             <div class="row g-4" id="lp-features-grid">
                 <div class="col-md-4">
                     <div class="feature-card h-100 p-4">
-                        <div class="stat-icon-wrap mb-3"><i data-lucide="git-branch"></i></div>
-                        <h4 class="fw-bold" style="color:#002347;">8-Stage Workflow</h4>
+                        <div class="d-flex align-items-center gap-3 mb-3">
+                            <div class="stat-icon-wrap flex-shrink-0"><i data-lucide="git-branch"></i></div>
+                            <h4 class="fw-bold mb-0" style="color:#002347;">8-Stage Workflow</h4>
+                        </div>
                         <p style="color:#476585; line-height:1.6;">Structured project lifecycle from problem identification and root cause analysis to institutional standardization.</p>
                     </div>
                 </div>
                 <div class="col-md-4">
                     <div class="feature-card h-100 p-4">
-                        <div class="stat-icon-wrap mb-3"><i data-lucide="layers"></i></div>
-                        <h4 class="fw-bold" style="color:#002347;">Role-Based Dashboards</h4>
+                        <div class="d-flex align-items-center gap-3 mb-3">
+                            <div class="stat-icon-wrap flex-shrink-0"><i data-lucide="layers"></i></div>
+                            <h4 class="fw-bold mb-0" style="color:#002347;">Role-Based Dashboards</h4>
+                        </div>
                         <p style="color:#476585; line-height:1.6;">Dedicated workspaces for Plant Admins, Quality Reviewers, Facilitators, and Team members.</p>
                     </div>
                 </div>
                 <div class="col-md-4">
                     <div class="feature-card h-100 p-4">
-                        <div class="stat-icon-wrap mb-3"><i data-lucide="database"></i></div>
-                        <h4 class="fw-bold" style="color:#002347;">Knowledge Repository</h4>
+                        <div class="d-flex align-items-center gap-3 mb-3">
+                            <div class="stat-icon-wrap flex-shrink-0"><i data-lucide="database"></i></div>
+                            <h4 class="fw-bold mb-0" style="color:#002347;">Knowledge Repository</h4>
+                        </div>
                         <p style="color:#476585; line-height:1.6;">Centralized repository for SOPs, lessons learned, historical project archives, and AI-assisted search.</p>
                     </div>
                 </div>
                 <div class="col-md-4">
                     <div class="feature-card h-100 p-4">
-                        <div class="stat-icon-wrap mb-3"><i data-lucide="bar-chart-3"></i></div>
-                        <h4 class="fw-bold" style="color:#002347;">Real-time Analytics</h4>
+                        <div class="d-flex align-items-center gap-3 mb-3">
+                            <div class="stat-icon-wrap flex-shrink-0"><i data-lucide="bar-chart-3"></i></div>
+                            <h4 class="fw-bold mb-0" style="color:#002347;">Real-time Analytics</h4>
+                        </div>
                         <p style="color:#476585; line-height:1.6;">Live KPI tracking with automated multi-plant reporting and institutional visual data metrics.</p>
                     </div>
                 </div>
                 <div class="col-md-4">
                     <div class="feature-card h-100 p-4">
-                        <div class="stat-icon-wrap mb-3"><i data-lucide="shield-check"></i></div>
-                        <h4 class="fw-bold" style="color:#002347;">Automated Compliance</h4>
+                        <div class="d-flex align-items-center gap-3 mb-3">
+                            <div class="stat-icon-wrap flex-shrink-0"><i data-lucide="shield-check"></i></div>
+                            <h4 class="fw-bold mb-0" style="color:#002347;">Automated Compliance</h4>
+                        </div>
                         <p style="color:#476585; line-height:1.6;">Stay ISO audit-ready with tamper-proof audit trails, version-controlled documents, and e-signatures.</p>
                     </div>
                 </div>
                 <div class="col-md-4">
                     <div class="feature-card h-100 p-4">
-                        <div class="stat-icon-wrap mb-3"><i data-lucide="smartphone"></i></div>
-                        <h4 class="fw-bold" style="color:#002347;">Mobile Readiness</h4>
+                        <div class="d-flex align-items-center gap-3 mb-3">
+                            <div class="stat-icon-wrap flex-shrink-0"><i data-lucide="smartphone"></i></div>
+                            <h4 class="fw-bold mb-0" style="color:#002347;">Mobile Readiness</h4>
+                        </div>
                         <p style="color:#476585; line-height:1.6;">Access your quality management engine from anywhere, across plant floors and executive tablets.</p>
                     </div>
                 </div>
@@ -625,65 +603,65 @@
                 <p class="fs-5 mx-auto" style="max-width: 600px; color:#476585;" id="lp-pricing-subtitle">Scale your quality operations without complexity.</p>
             </div>
             <div class="row g-4 justify-content-center" id="lp-pricing-grid">
-                <div class="col-lg-4">
-                    <div class="feature-card h-100 p-4">
+                <div class="col-lg-4 d-flex">
+                    <div class="feature-card h-100 p-4 w-100 d-flex flex-column">
                         <div class="mb-4">
                             <h3 class="fw-black mb-1" style="color:#002347;">Starter</h3>
                             <p class="mb-4" style="color:#476585;">For small focused teams</p>
-                            <div class="d-flex align-items-baseline gap-1 mb-4">
+                            <div class="d-flex align-items-baseline gap-1 mb-4" style="min-height: 48px;">
                                 <span class="fs-1 fw-black" style="color:#002347;">₹0</span>
                                 <span style="color:#476585;">/month (14d Trial)</span>
                             </div>
                         </div>
-                        <ul class="list-unstyled mb-5 v-stack gap-3">
+                        <ul class="list-unstyled mb-4 v-stack gap-3 flex-grow-1">
                             <li class="d-flex gap-2 align-items-center" style="color:#476585;"><i data-lucide="check" style="color:#10B981; width:20px; height:20px;"></i> 50 Users Max</li>
                             <li class="d-flex gap-2 align-items-center" style="color:#476585;"><i data-lucide="check" style="color:#10B981; width:20px; height:20px;"></i> Basic QC Workflow</li>
                             <li class="d-flex gap-2 align-items-center" style="color:#476585;"><i data-lucide="check" style="color:#10B981; width:20px; height:20px;"></i> Limited Reports</li>
                             <li class="d-flex gap-2 align-items-center" style="color:#476585;"><i data-lucide="check" style="color:#10B981; width:20px; height:20px;"></i> 14 Days Free Trial</li>
                         </ul>
-                        <a href="/auth/register-org.html?plan=Starter" class="ds-btn ds-btn-secondary w-100 py-3 text-center">Start Free Trial</a>
+                        <a href="/auth/register-org.html?plan=Starter" class="ds-btn ds-btn-secondary w-100 py-3 text-center mt-auto">Start Free Trial</a>
                     </div>
                 </div>
-                <div class="col-lg-4 position-relative">
+                <div class="col-lg-4 position-relative d-flex">
                     <div class="position-absolute w-100 text-center" style="top: -15px; left: 0; z-index: 10;">
-                        <span class="ds-badge gold px-3 py-1" style="border-radius: 20px; font-weight: 700; font-size: 0.72rem; letter-spacing: 0.05em; display: inline-block;">MOST POPULAR</span>
+                        <span class="ds-badge px-3 py-1" style="background: #2563eb !important; color: #ffffff !important; border-radius: 20px; font-weight: 700; font-size: 0.72rem; letter-spacing: 0.05em; padding: 4px 14px; box-shadow: 0 4px 14px rgba(37, 99, 235, 0.4); border: 1px solid rgba(255,255,255,0.25); display: inline-block;">MOST POPULAR</span>
                     </div>
-                    <div class="feature-card h-100 p-4" style="border: 2px solid #C4A25A;">
+                    <div class="feature-card h-100 p-4 w-100 d-flex flex-column" style="border: 2px solid #2563eb;">
                         <div class="mb-4">
                             <h3 class="fw-black mb-1" style="color:#002347;">Professional</h3>
                             <p class="mb-4" style="color:#476585;">Complete enterprise engine</p>
-                            <div class="d-flex align-items-baseline gap-1 mb-4">
+                            <div class="d-flex align-items-baseline gap-1 mb-4" style="min-height: 48px;">
                                 <span class="fs-1 fw-black" style="color:#002347;">₹199</span>
                                 <span style="color:#476585;">/month</span>
                             </div>
                         </div>
-                        <ul class="list-unstyled mb-5 v-stack gap-3">
+                        <ul class="list-unstyled mb-4 v-stack gap-3 flex-grow-1">
                             <li class="d-flex gap-2 align-items-center" style="color:#476585;"><i data-lucide="check" style="color:#10B981; width:20px; height:20px;"></i> 500 Users</li>
                             <li class="d-flex gap-2 align-items-center" style="color:#476585;"><i data-lucide="check" style="color:#10B981; width:20px; height:20px;"></i> Full Workflow Engine</li>
                             <li class="d-flex gap-2 align-items-center" style="color:#476585;"><i data-lucide="check" style="color:#10B981; width:20px; height:20px;"></i> Analytics Dashboard</li>
                             <li class="d-flex gap-2 align-items-center" style="color:#476585;"><i data-lucide="check" style="color:#10B981; width:20px; height:20px;"></i> Repository + AI Assistant</li>
                             <li class="d-flex gap-2 align-items-center" style="color:#476585;"><i data-lucide="check" style="color:#10B981; width:20px; height:20px;"></i> Reports + Audit Logs</li>
                         </ul>
-                        <a href="/auth/register-org.html?plan=Professional" class="ds-btn ds-btn-primary w-100 py-3 text-center">Start Free Trial</a>
+                        <a href="/auth/register-org.html?plan=Professional" class="ds-btn pricing-btn-featured w-100 py-3 text-center mt-auto">Buy Now</a>
                     </div>
                 </div>
-                <div class="col-lg-4">
-                    <div class="feature-card h-100 p-4">
+                <div class="col-lg-4 d-flex">
+                    <div class="feature-card h-100 p-4 w-100 d-flex flex-column">
                         <div class="mb-4">
                             <h3 class="fw-black mb-1" style="color:#002347;">Enterprise</h3>
                             <p class="mb-4" style="color:#476585;">For global scale manufacturing</p>
-                            <div class="d-flex align-items-baseline gap-1 mb-4">
+                            <div class="d-flex align-items-baseline gap-1 mb-4" style="min-height: 48px;">
                                 <span class="fs-1 fw-black" style="color:#002347;">Custom</span>
                             </div>
                         </div>
-                        <ul class="list-unstyled mb-5 v-stack gap-3">
+                        <ul class="list-unstyled mb-4 v-stack gap-3 flex-grow-1">
                             <li class="d-flex gap-2 align-items-center" style="color:#476585;"><i data-lucide="check" style="color:#10B981; width:20px; height:20px;"></i> Unlimited Users</li>
                             <li class="d-flex gap-2 align-items-center" style="color:#476585;"><i data-lucide="check" style="color:#10B981; width:20px; height:20px;"></i> Multi Plant Support</li>
                             <li class="d-flex gap-2 align-items-center" style="color:#476585;"><i data-lucide="check" style="color:#10B981; width:20px; height:20px;"></i> White Label Branding</li>
                             <li class="d-flex gap-2 align-items-center" style="color:#476585;"><i data-lucide="check" style="color:#10B981; width:20px; height:20px;"></i> API Integration</li>
                             <li class="d-flex gap-2 align-items-center" style="color:#476585;"><i data-lucide="check" style="color:#10B981; width:20px; height:20px;"></i> Dedicated Support</li>
                         </ul>
-                        <a href="javascript:void(0)" onclick="openTalkToSalesModal()" class="ds-btn ds-btn-secondary w-100 py-3 text-center">Contact Sales</a>
+                        <a href="javascript:void(0)" onclick="openTalkToSalesModal()" class="ds-btn ds-btn-secondary w-100 py-3 text-center mt-auto">Contact Sales</a>
                     </div>
                 </div>
             </div>
@@ -887,7 +865,7 @@
     </footer>
 
     <script src="/assets/dist/bootstrap.bundle.min.js"></script>
-    <script src="/assets/dist/core-bundle.2abaccd7.min.js"></script>
+    <script src="/assets/dist/core-bundle.4fed00f2.min.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
             // Clean up any stray authenticated shell elements on public landing page
@@ -1021,15 +999,11 @@
                         if(cms.hero_feature_2 !== undefined) _txt('lp-hero-feature2', cms.hero_feature_2);
                         if(cms.hero_feature_3 !== undefined) _txt('lp-hero-feature3', cms.hero_feature_3);
 
-                        // Hero Stats
-                        [1, 2, 3].forEach(n => {
-                            const valKey = `hero_stat_${n}_val`;
-                            const lblKey = `hero_stat_${n}_lbl`;
-                            const val = (cms[valKey] !== undefined) ? cms[valKey] : '';
-                            const lbl = (cms[lblKey] !== undefined) ? cms[lblKey] : '';
-                            _txt(`lp-hero-stat${n}-val`, val);
-                            _txt(`lp-hero-stat${n}-lbl`, lbl);
-                        });
+                        // Hero Mockup Image
+                        if (cms.hero_image_url) {
+                            const heroImg = document.getElementById('lp-hero-image');
+                            if (heroImg) heroImg.src = cms.hero_image_url;
+                        }
 
                         // 1b. Trust Ticker Strip
                         let hasAnyTicker = false;
@@ -1092,10 +1066,12 @@
                                 if (grid) {
                                     grid.innerHTML = featsList.map(f => `
                                     <div class="col-md-4">
-                                        <div class="feature-card glass-card shimmer-effect">
-                                            <div class="icon-box"><i data-lucide="${f.icon || 'star'}" size="24"></i></div>
-                                            <h4 class="fw-bold">${f.title || ''}</h4>
-                                            <p class="text-muted">${f.desc || ''}</p>
+                                        <div class="feature-card h-100 p-4">
+                                            <div class="d-flex align-items-center gap-3 mb-3">
+                                                <div class="stat-icon-wrap flex-shrink-0"><i data-lucide="${f.icon || 'star'}"></i></div>
+                                                <h4 class="fw-bold mb-0" style="color:#002347;">${f.title || ''}</h4>
+                                            </div>
+                                            <p style="color:#476585; line-height:1.6;">${f.desc || ''}</p>
                                         </div>
                                     </div>`).join('');
                                 }
@@ -1154,24 +1130,29 @@
                                             ctaHref = 'javascript:void(0)';
                                             ctaClick = 'onclick="openTalkToSalesModal()"';
                                         }
+                                        const isFeatured = !!p.badge || (p.name || '').toLowerCase() === 'professional';
+                                        let ctaText = p.cta || (isFeatured ? 'Buy Now' : 'Start Free Trial');
+                                        if (isFeatured && (ctaText.toLowerCase().includes('free trial') || ctaText.toLowerCase() === 'start free trial')) {
+                                            ctaText = 'Buy Now';
+                                        }
                                         return `
-                                    <div class="col-lg-4 position-relative">
+                                    <div class="col-lg-4 position-relative d-flex">
                                         ${p.badge ? `<div class="position-absolute w-100 text-center" style="top: -15px; left: 0; z-index: 10;">
                                             <span class="ds-badge px-3 py-1" style="background: #2563eb !important; color: #ffffff !important; border-radius: 20px; font-weight: 700; font-size: 0.72rem; letter-spacing: 0.05em; padding: 4px 14px; box-shadow: 0 4px 14px rgba(37, 99, 235, 0.4); border: 1px solid rgba(255,255,255,0.25); display: inline-block;">${p.badge}</span>
                                         </div>` : ''}
-                                        <div class="feature-card glass-card ${p.badge ? 'border-primary' : ''} h-100" ${p.badge ? 'style="border-width: 2px;"' : ''}>
+                                        <div class="feature-card glass-card ${isFeatured ? 'border-primary' : ''} h-100 p-4 w-100 d-flex flex-column" ${isFeatured ? 'style="border-width: 2px; border-color: #2563eb !important;"' : ''}>
                                             <div class="mb-4">
                                                 <h3 class="fw-black mb-1">${p.name || ''}</h3>
                                                 <p class="text-muted mb-4">${p.desc || ''}</p>
-                                                <div class="d-flex align-items-baseline gap-1 mb-4">
+                                                <div class="d-flex align-items-baseline gap-1 mb-4" style="min-height: 48px;">
                                                     <span class="fs-1 fw-black">${p.price || ''}</span>
                                                     <span class="text-muted">${p.period || ''}</span>
                                                 </div>
                                             </div>
-                                            <ul class="list-unstyled mb-5 v-stack gap-3">
+                                            <ul class="list-unstyled mb-4 v-stack gap-3 flex-grow-1">
                                                 ${(p.features || []).map(feat => `<li class="d-flex gap-2"><i data-lucide="check" class="text-success" style="width:20px;"></i> ${feat}</li>`).join('')}
                                             </ul>
-                                            <a href="${ctaHref}" ${ctaClick} class="ds-btn ds-btn-${p.badge ? 'primary' : 'secondary'} w-100 py-3">${p.cta || 'Start Free Trial'}</a>
+                                            <a href="${ctaHref}" ${ctaClick} class="ds-btn ${isFeatured ? 'pricing-btn-featured' : 'ds-btn-secondary'} w-100 py-3 text-center mt-auto">${ctaText}</a>
                                         </div>
                                     </div>`;
                                     }).join('');

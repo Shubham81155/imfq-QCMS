@@ -488,7 +488,7 @@
     </div>
 
     <script src="/assets/dist/bootstrap.bundle.min.js"></script>
-    <script src="/assets/dist/core-bundle.2abaccd7.min.js"></script>
+    <script src="/assets/dist/core-bundle.4fed00f2.min.js"></script>
     <script>
     const revDash = {
         selectedProjectId: null,
@@ -524,7 +524,9 @@
                     document.querySelectorAll('[data-tab]').forEach(b => b.classList.remove('active'));
                     btn.classList.add('active');
                     document.querySelectorAll('.tab-content-panel').forEach(p => p.classList.add('d-none'));
-                    document.getElementById('tab-' + btn.dataset.tab).classList.remove('d-none');
+                    const targetPanel = document.getElementById('tab-' + btn.dataset.tab);
+                    if (targetPanel) targetPanel.classList.remove('d-none');
+                    this.highlightKpiCard(btn.dataset.tab);
                 });
             });
 
@@ -551,7 +553,28 @@
 
         switchTab(tabName) {
             const btn = document.querySelector(`[data-tab="${tabName}"]`);
-            if (btn) btn.click();
+            if (btn) {
+                btn.click();
+                const tabsEl = document.getElementById('revTabs');
+                if (tabsEl) {
+                    tabsEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            }
+        },
+
+        highlightKpiCard(tabName) {
+            const tabs = ['pending', 'impact', 'closure', 'approved', 'rejected'];
+            const activeIdx = tabs.indexOf(tabName);
+            const kpiCards = document.querySelectorAll('#kpiGrid .glass-card');
+            kpiCards.forEach((card, idx) => {
+                if (idx === activeIdx) {
+                    card.style.borderColor = 'var(--ds-primary, #2563eb)';
+                    card.style.boxShadow = '0 0 0 2px var(--ds-primary, #2563eb), 0 8px 24px rgba(37, 99, 235, 0.12)';
+                } else {
+                    card.style.borderColor = '';
+                    card.style.boxShadow = '';
+                }
+            });
         },
 
         handleGlobalSearch(query) {
@@ -584,20 +607,29 @@
             try {
                 const stats = await api.get('/reviewer/stats');
                 document.getElementById('kpiGrid').innerHTML =
-                    OctaQube.kpiCard('Pending Review', stats.pending_count || 0, 'clock', 'orange') +
-                    OctaQube.kpiCard('Impact Review', stats.pending_impact || 0, 'bar-chart-3', 'blue') +
-                    OctaQube.kpiCard('Pending Closure', stats.pending_closure || 0, 'archive', 'yellow') +
-                    OctaQube.kpiCard('Approved Projects', stats.approved_count || 0, 'check-circle', 'green') +
-                    OctaQube.kpiCard('Rejected Projects', stats.rejected_count || 0, 'x-circle', 'red');
+                    OctaQube.kpiCard('Pending Review', stats.pending_count || 0, 'clock', 'orange', null, 'javascript:revDash.switchTab(\'pending\')') +
+                    OctaQube.kpiCard('Impact Review', stats.pending_impact || 0, 'bar-chart-3', 'blue', null, 'javascript:revDash.switchTab(\'impact\')') +
+                    OctaQube.kpiCard('Pending Closure', stats.pending_closure || 0, 'archive', 'yellow', null, 'javascript:revDash.switchTab(\'closure\')') +
+                    OctaQube.kpiCard('Approved Projects', stats.approved_count || 0, 'check-circle', 'green', null, 'javascript:revDash.switchTab(\'approved\')') +
+                    OctaQube.kpiCard('Rejected Projects', stats.rejected_count || 0, 'x-circle', 'red', null, 'javascript:revDash.switchTab(\'rejected\')');
 
                 const kpiCols = document.querySelectorAll('#kpiGrid > div, #kpiGrid > a');
-                if (kpiCols[3]) {
-                    kpiCols[3].style.cursor = 'pointer';
-                    kpiCols[3].addEventListener('click', () => this.switchTab('approved'));
-                }
-                if (kpiCols[4]) {
-                    kpiCols[4].style.cursor = 'pointer';
-                    kpiCols[4].addEventListener('click', () => this.switchTab('rejected'));
+                const tabs = ['pending', 'impact', 'closure', 'approved', 'rejected'];
+                kpiCols.forEach((col, idx) => {
+                    const tab = tabs[idx];
+                    if (tab) {
+                        col.style.cursor = 'pointer';
+                        col.setAttribute('title', `View ${tab} projects`);
+                        col.addEventListener('click', (e) => {
+                            e.preventDefault();
+                            this.switchTab(tab);
+                        });
+                    }
+                });
+
+                const currentActive = document.querySelector('#revTabs [data-tab].active');
+                if (currentActive) {
+                    this.highlightKpiCard(currentActive.dataset.tab);
                 }
 
                 if (window.lucide) lucide.createIcons();

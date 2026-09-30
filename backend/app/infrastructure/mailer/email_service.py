@@ -517,10 +517,11 @@ class EmailUtils:
 
         user_ctx = {
             'user_name': user_name,
+            'name': user_name,
             'username': login_identifier,
             'login_identifier': login_identifier,
-            'user_email': user.email,
-            'email': user.email,
+            'user_email': user.email or login_identifier,
+            'email': user.email or login_identifier,
             'phone': user_phone,
             'phone_number': user_phone,
             'temp_password': temp_password,
@@ -529,9 +530,12 @@ class EmailUtils:
             'default_password': temp_password,
             'temporary_password': temp_password,
             'org_name': org_name,
+            'organization_name': org_name,
             'role_name': role_name,
             'assigned_role': role_name,
+            'role': role_name,
             'app_url': EmailUtils._get_app_url(),
+            'login_url': f"{EmailUtils._get_app_url()}/login.html",
             'software_name': branding_ctx.get('software_name', 'QCMS Enterprise OS'),
             'software_short_name': branding_ctx.get('software_short_name', 'QCMS'),
             'support_email': branding_ctx.get('support_email', 'support@ifqm.org.in')
@@ -546,23 +550,36 @@ class EmailUtils:
                 if not sms_tmpl:
                     sms_tmpl = SmsTemplateConfig.query.filter_by(template_key='user_welcome_credentials').first()
 
-                if sms_tmpl and (sms_tmpl.is_active is not False) and sms_tmpl.body:
-                    sms_body = EmailNotificationEngine.replace_variables(sms_tmpl.body, user_ctx)
+                # If sms_tmpl exists and is explicitly disabled, skip SMS dispatch
+                if sms_tmpl and sms_tmpl.is_active is False:
+                    logger.info("[EmailUtils] Welcome SMS template is disabled. Skipping SMS dispatch.")
+                else:
+                    if sms_tmpl and sms_tmpl.body:
+                        sms_body = EmailNotificationEngine.replace_variables(sms_tmpl.body, user_ctx)
+                        template_id = sms_tmpl.template_id
+                        entity_id = sms_tmpl.entity_id
+                        sender_id = sms_tmpl.sender_id or 'IFQMQC'
+                    else:
+                        sms_body = f"Welcome to Quality Circle! Your account username is ({login_identifier}).and temporary password is [{temp_password}] Please change your password after first login. Do not share these credentials. - IFQM QCMS"
+                        template_id = None
+                        entity_id = None
+                        sender_id = 'IFQMQC'
+
                     sms_ok, sms_msg = EmailNotificationEngine.dispatch_dlt_sms(
                         phone=user_phone,
                         sms_body=sms_body,
-                        template_id=sms_tmpl.template_id,
-                        entity_id=sms_tmpl.entity_id,
-                        sender_id=sms_tmpl.sender_id,
+                        template_id=template_id,
+                        entity_id=entity_id,
+                        sender_id=sender_id,
                         msg_type="TXN"
                     )
                     sms_log = SmsNotificationLog(
-                        template_key=sms_tmpl.template_key,
-                        template_name=sms_tmpl.display_name,
-                        category=sms_tmpl.category or 'auth',
-                        sender_id=sms_tmpl.sender_id or 'IFQMQC',
-                        dlt_template_id=sms_tmpl.template_id,
-                        dlt_entity_id=sms_tmpl.entity_id,
+                        template_key=sms_tmpl.template_key if sms_tmpl else 'user_welcome_credentials',
+                        template_name=sms_tmpl.display_name if sms_tmpl else 'User Account Welcome & Login Credentials',
+                        category=(sms_tmpl.category if sms_tmpl else 'auth') or 'auth',
+                        sender_id=sender_id,
+                        dlt_template_id=template_id,
+                        dlt_entity_id=entity_id,
                         message_body=sms_body,
                         phone_number=user_phone,
                         recipient_name=user_name,
@@ -574,7 +591,7 @@ class EmailUtils:
                         sent_at=datetime.now(timezone.utc).replace(tzinfo=None)
                     )
                     db.session.add(sms_log)
-                    if sms_ok:
+                    if sms_ok and sms_tmpl:
                         sms_tmpl.total_sent = (sms_tmpl.total_sent or 0) + 1
                         sms_tmpl.last_triggered_at = datetime.now(timezone.utc).replace(tzinfo=None)
                     db.session.commit()
@@ -710,6 +727,31 @@ class EmailUtils:
                 <p style="color: #64748b; font-size: 13px; text-align: center;">This code will expire in <strong>10 minutes</strong>.</p>
             """
             html = DocumentBrandingService.wrap_email_html(body, title="Password Reset OTP", org_id=org_id)
+            if is_async:
+                return EmailUtils.send_email_async(user.email, subject, html, email_type='otp', org_id=org_id)
+            return EmailUtils.send_email(user.email, subject, html, email_type='otp', org_id=org_id)
+
+    @staticmethod
+    def send_login_otp_email(user, otp, is_async=True):
+        """Sends a Login OTP verification email using active template configuration."""
+        try:
+            from app.domain.services.email_notification_engine import EmailNotificationEngine
+            return EmailNotificationEngine.trigger_login_otp_notification(user, otp)
+        except Exception as e:
+            logger.error(f"[EmailUtils] Error in send_login_otp_email: {e}")
+            org_id = getattr(user, 'org_id', None)
+            ctx = DocumentBrandingService.get_branding_context(org_id)
+            subject = f"Your Login OTP Verification Code - {ctx['software_name']}"
+            body = f"""
+                <h2 style="color: #2563eb; margin-top:0; text-align:center;">Login Verification Code</h2>
+                <p>Hello {user.username or user.email},</p>
+                <p>We received a sign-in request for your {ctx['software_name']} account. Use the 6-digit verification code below to securely log in:</p>
+                <div style="background: #f8fafc; border: 2px dashed #cbd5e1; padding: 20px; text-align: center; margin: 25px 0; border-radius: 12px;">
+                    <span style="font-size: 32px; font-weight: bold; letter-spacing: 10px; color: #1e40af; font-family: monospace;">{otp}</span>
+                </div>
+                <p style="color: #64748b; font-size: 13px; text-align: center;">This code will expire in <strong>10 minutes</strong>. Never share this code with anyone.</p>
+            """
+            html = DocumentBrandingService.wrap_email_html(body, title="Login OTP Verification", org_id=org_id)
             if is_async:
                 return EmailUtils.send_email_async(user.email, subject, html, email_type='otp', org_id=org_id)
             return EmailUtils.send_email(user.email, subject, html, email_type='otp', org_id=org_id)

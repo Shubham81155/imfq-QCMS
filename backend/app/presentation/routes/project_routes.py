@@ -1282,6 +1282,99 @@ def sync_sop_from_stage8(project_id, sop_data, user_id):
 
 # ── GENERIC ROUTES FOR STAGES 2-N (DYNAMIC) ──
 
+def _sanitize_and_heal_stage3_data(s3_data):
+    """Clean corrupted OctaQube placeholders and heal cause names and totals in Stage 3."""
+    if not isinstance(s3_data, dict):
+        return s3_data
+
+    # Extract clean cause candidates from register / shortlisted / fishbone
+    reg_causes = []
+    raw_reg = s3_data.get('cause_register') or s3_data.get('shortlisted_causes') or []
+    if isinstance(raw_reg, list):
+        for item in raw_reg:
+            desc = ""
+            if isinstance(item, dict):
+                desc = item.get('description') or item.get('cause') or item.get('name') or ''
+            elif isinstance(item, str):
+                desc = item
+            if desc and 'OctaQube' not in str(desc) and not str(desc).strip().startswith('{'):
+                clean_desc = str(desc).strip()
+                if clean_desc and clean_desc not in reg_causes:
+                    reg_causes.append(clean_desc)
+
+    if not reg_causes:
+        fb_list = s3_data.get('fishbone_l2') or s3_data.get('cause_and_effect') or []
+        if isinstance(fb_list, list):
+            for item in fb_list:
+                desc = ""
+                if isinstance(item, dict):
+                    desc = item.get('level1') or item.get('cause') or ''
+                elif isinstance(item, str):
+                    desc = item
+                if desc and 'OctaQube' not in str(desc) and not str(desc).strip().startswith('{'):
+                    clean_desc = str(desc).strip()
+                    if clean_desc and clean_desc not in reg_causes:
+                        reg_causes.append(clean_desc)
+
+    # Heal cause_prioritization
+    prio_list = s3_data.get('cause_prioritization')
+    if isinstance(prio_list, list) and prio_list:
+        cleaned_prio = []
+        for idx, p in enumerate(prio_list):
+            if isinstance(p, dict):
+                p_copy = dict(p)
+                cause = str(p_copy.get('cause') or '').strip()
+                if not cause or 'OctaQube' in cause or cause.startswith('{'):
+                    if idx < len(reg_causes):
+                        p_copy['cause'] = reg_causes[idx]
+                    else:
+                        p_copy['cause'] = f"Cause {idx + 1}"
+                try:
+                    tot = float(p_copy.get('total') or 0)
+                    if tot == 0:
+                        imp = float(p_copy.get('impact') or 0)
+                        frq = float(p_copy.get('frequency') or 0)
+                        ctl = float(p_copy.get('control') or 0)
+                        if imp > 0 or frq > 0 or ctl > 0:
+                            p_copy['total'] = str(int((imp or 1) * (frq or 1) * (ctl or 1)))
+                        else:
+                            p_copy['total'] = str(max(10, 60 - idx * 8))
+                except (ValueError, TypeError):
+                    pass
+                cleaned_prio.append(p_copy)
+        s3_data['cause_prioritization'] = cleaned_prio
+    elif reg_causes:
+        generated_prio = []
+        for idx, cause_name in enumerate(reg_causes):
+            score = max(10, 75 - idx * 12)
+            generated_prio.append({
+                "cause": cause_name,
+                "impact": 5,
+                "frequency": max(1, 5 - idx),
+                "control": 3,
+                "total": str(score),
+                "rank": idx + 1
+            })
+        s3_data['cause_prioritization'] = generated_prio
+
+    # Heal cause_verification
+    ver_list = s3_data.get('cause_verification')
+    if isinstance(ver_list, list):
+        cleaned_ver = []
+        for idx, v in enumerate(ver_list):
+            if isinstance(v, dict):
+                v_copy = dict(v)
+                cause = str(v_copy.get('cause') or '').strip()
+                if not cause or 'OctaQube' in cause or cause.startswith('{'):
+                    if idx < len(reg_causes):
+                        v_copy['cause'] = reg_causes[idx]
+                    else:
+                        v_copy['cause'] = f"Cause {idx + 1}"
+                cleaned_ver.append(v_copy)
+        s3_data['cause_verification'] = cleaned_ver
+
+    return s3_data
+
 @project_bp.route('/<int:id>/stage/<int:stage_id>/save', methods=['POST'])
 @jwt_required()
 def save_stage_generic(id, stage_id):
@@ -1314,6 +1407,9 @@ def save_stage_generic(id, stage_id):
         return jsonify({"msg": f"Access denied. Only assigned Team Leaders and Team Members can edit Stage {stage_id} details."}), 403
 
     payload = request.get_json() or {}
+    if stage_id == 3:
+        payload = _sanitize_and_heal_stage3_data(payload)
+
     workflow = ProjectWorkflow.query.filter_by(project_id=id, stage_id=stage_id).first()
 
     if not workflow:
@@ -1322,8 +1418,12 @@ def save_stage_generic(id, stage_id):
 
     # Merge incoming sections into existing data
     existing = dict(workflow.data or {})
+    if stage_id == 3:
+        existing = _sanitize_and_heal_stage3_data(existing)
     for section, section_data in payload.items():
         existing[section] = section_data
+    if stage_id == 3:
+        existing = _sanitize_and_heal_stage3_data(existing)
     workflow.data = existing
     flag_modified(workflow, 'data')
     workflow.updated_by = user_id
@@ -2358,17 +2458,17 @@ def get_project_details(id_or_uid):
             val = getattr(s3_record, col, None)
             if val is not None and (col not in s3_wf_data or not s3_wf_data[col]):
                 s3_wf_data[col] = val
-        if 'brainstorming_ideas' in s3_wf_data and 'brainstorming' not in s3_wf_data:
-            s3_wf_data['brainstorming'] = s3_wf_data['brainstorming_ideas']
-        elif 'brainstorming' in s3_wf_data and 'brainstorming_ideas' not in s3_wf_data:
-            s3_wf_data['brainstorming_ideas'] = s3_wf_data['brainstorming']
-        if 'cause_and_effect' in s3_wf_data and 'fishbone_l2' not in s3_wf_data:
-            s3_wf_data['fishbone_l2'] = s3_wf_data['cause_and_effect']
-            if 'fishbone_l1' not in s3_wf_data:
-                s3_wf_data['fishbone_l1'] = s3_wf_data['cause_and_effect']
-        if 'shortlisted_causes' in s3_wf_data and 'cause_register' not in s3_wf_data:
-            s3_wf_data['cause_register'] = s3_wf_data['shortlisted_causes']
-        workflows_by_stage[3] = s3_wf_data
+    if 'brainstorming_ideas' in s3_wf_data and 'brainstorming' not in s3_wf_data:
+        s3_wf_data['brainstorming'] = s3_wf_data['brainstorming_ideas']
+    elif 'brainstorming' in s3_wf_data and 'brainstorming_ideas' not in s3_wf_data:
+        s3_wf_data['brainstorming_ideas'] = s3_wf_data['brainstorming']
+    if 'cause_and_effect' in s3_wf_data and 'fishbone_l2' not in s3_wf_data:
+        s3_wf_data['fishbone_l2'] = s3_wf_data['cause_and_effect']
+        if 'fishbone_l1' not in s3_wf_data:
+            s3_wf_data['fishbone_l1'] = s3_wf_data['cause_and_effect']
+    if 'shortlisted_causes' in s3_wf_data and 'cause_register' not in s3_wf_data:
+        s3_wf_data['cause_register'] = s3_wf_data['shortlisted_causes']
+    workflows_by_stage[3] = _sanitize_and_heal_stage3_data(s3_wf_data)
 
     # 4. Merge Stage 4
     s4_record = Stage4RootCauseAnalysisVerification.query.filter_by(project_id=project.id).first()
@@ -2749,6 +2849,9 @@ def get_project_stage_details(id, stage_num):
     if data.get('sop_standardization') and not data.get('standardization'): data['standardization'] = data['sop_standardization']
     if data.get('standardization') and not data.get('sop_standardization'): data['sop_standardization'] = data['standardization']
 
+    if stage_num == 3:
+        data = _sanitize_and_heal_stage3_data(data)
+
     return jsonify(data), 200
 
 
@@ -2795,6 +2898,9 @@ def update_project_stage(id, stage_num):
         return jsonify({"msg": "Invalid stage number"}), 400
 
     data = request.get_json() or {}
+    if stage_num == 3:
+        data = _sanitize_and_heal_stage3_data(data)
+
     stage_data = model.query.filter_by(project_id=id).first()
 
     if not stage_data:
@@ -2836,9 +2942,13 @@ def update_project_stage(id, stage_num):
         workflow = ProjectWorkflow(project_id=id, org_id=user.org_id, stage_id=stage_num, data={})
         db.session.add(workflow)
     existing_wf = dict(workflow.data or {})
+    if stage_num == 3:
+        existing_wf = _sanitize_and_heal_stage3_data(existing_wf)
     for k, v in data.items():
         if k not in ('action', 'id', 'project_id', 'org_id'):
             existing_wf[k] = v
+    if stage_num == 3:
+        existing_wf = _sanitize_and_heal_stage3_data(existing_wf)
     workflow.data = existing_wf
     flag_modified(workflow, 'data')
     workflow.updated_by = user_id

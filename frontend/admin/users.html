@@ -292,7 +292,7 @@ function escapeHtml(s) {
                         <div class="ds-field" id="passwordFieldContainer">
                             <label class="ds-label">Temporary Access Credentials <span class="text-danger">*</span></label>
                             <div class="h-stack gap-2">
-                                <input type="text" class="ds-input flex-grow-1" id="password" placeholder="Initial access code" value="Welcome@123" style="letter-spacing: 0.1em; font-family: monospace; font-weight: 700;" autocomplete="new-password">
+                                <input type="text" class="ds-input flex-grow-1" id="password" placeholder="Temporary access code" value="" style="letter-spacing: 0.1em; font-family: monospace; font-weight: 700;" autocomplete="new-password">
                                 <button type="button" class="ds-btn ds-btn-secondary ds-btn-icon" onclick="Users.generatePassword()" title="Regenerate Password" style="border: 1px solid var(--ds-border-color);">
                                     <i data-lucide="refresh-cw" style="width:18px;height:18px;"></i>
                                 </button>
@@ -583,7 +583,7 @@ function escapeHtml(s) {
 
 
     <script src="/assets/dist/bootstrap.bundle.min.js"></script>
-    <script src="/assets/dist/core-bundle.2abaccd7.min.js"></script>
+    <script src="/assets/dist/core-bundle.4fed00f2.min.js"></script>
     <script>
         const Users = {
             currentFilter: 'all',
@@ -1624,7 +1624,7 @@ function escapeHtml(s) {
                         <div class="ds-field" id="passwordFieldContainer">
                             <label class="ds-label">Temporary Access Credentials <span class="text-danger">*</span></label>
                             <div class="h-stack gap-2">
-                                <input type="text" class="ds-input flex-grow-1" id="password" placeholder="Initial access code" value="Welcome@123" style="letter-spacing:0.1em;font-family:monospace;font-weight:700;" autocomplete="new-password">
+                                <input type="text" class="ds-input flex-grow-1" id="password" placeholder="Temporary access code" value="" style="letter-spacing:0.1em;font-family:monospace;font-weight:700;" autocomplete="new-password">
                                 <button type="button" class="ds-btn ds-btn-secondary ds-btn-icon" onclick="Users.generatePassword()" title="Regenerate Password" style="border:1px solid var(--ds-border-color);">
                                     <i data-lucide="refresh-cw" style="width:18px;height:18px;"></i>
                                 </button>
@@ -1636,7 +1636,7 @@ function escapeHtml(s) {
 
                 document.getElementById('userForm').reset();
                 if (document.getElementById('phone')) document.getElementById('phone').value = '';
-                document.getElementById('password').value = 'Welcome@123';
+                this.generatePassword(false);
                 document.getElementById('passwordFieldContainer').style.display = 'block';
                 document.querySelector('#userModal .modal-title').textContent = 'Provision Access';
                 document.querySelector('#userModal .ds-btn-primary').textContent = 'Confirm Provisioning';
@@ -1661,17 +1661,31 @@ function escapeHtml(s) {
                 new bootstrap.Modal(document.getElementById('userModal')).show();
             },
 
-            generatePassword() {
-                const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
-                let retVal = "OctaQube@";
-                for (let i = 0, n = charset.length; i < 8; ++i) {
-                    retVal += charset.charAt(Math.floor(Math.random() * n));
+            generatePassword(showToast = true) {
+                const uppers = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+                const lowers = "abcdefghjkmnpqrstuvwxyz";
+                const digits = "23456789";
+                const specials = "@#$%&*!";
+                const all = uppers + lowers + digits + specials;
+                const pick = (str) => str.charAt(Math.floor(Math.random() * str.length));
+                // Guarantee at least 1 uppercase, 1 lowercase, 1 digit, 1 special character (total 8 chars)
+                const pwd = [pick(uppers), pick(lowers), pick(digits), pick(specials)];
+                for (let i = 0; i < 4; i++) {
+                    pwd.push(pick(all));
                 }
+                for (let i = pwd.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [pwd[i], pwd[j]] = [pwd[j], pwd[i]];
+                }
+                const result = pwd.join('');
                 const passField = document.getElementById('password');
                 if (passField) {
-                    passField.value = retVal;
-                    OctaQube.toast('Temporary password regenerated.', 'info');
+                    passField.value = result;
+                    if (showToast && window.OctaQube) {
+                        OctaQube.toast('New temporary password generated.', 'info');
+                    }
                 }
+                return result;
             },
 
             openEditModal(id) {
@@ -1739,7 +1753,7 @@ function escapeHtml(s) {
                             <div class="ds-field" id="passwordFieldContainer">
                                 <label class="ds-label">Temporary Access Credentials <span class="text-danger">*</span></label>
                                 <div class="h-stack gap-2">
-                                    <input type="text" class="ds-input flex-grow-1" id="password" placeholder="Initial access code" value="Welcome@123" style="letter-spacing:0.1em;font-family:monospace;font-weight:700;" autocomplete="new-password">
+                                    <input type="text" class="ds-input flex-grow-1" id="password" placeholder="Temporary access code" value="" style="letter-spacing:0.1em;font-family:monospace;font-weight:700;" autocomplete="new-password">
                                     <button type="button" class="ds-btn ds-btn-secondary ds-btn-icon" onclick="Users.generatePassword()" title="Regenerate Password" style="border:1px solid var(--ds-border-color);">
                                         <i data-lucide="refresh-cw" style="width:18px;height:18px;"></i>
                                     </button>

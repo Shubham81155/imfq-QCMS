@@ -561,12 +561,9 @@ const PlatformSettings = {
         this._val('ps-cms-cta-primary-url', lCms.cta_primary_url || '/auth/register-org.html');
         this._val('ps-cms-cta-secondary', lCms.cta_secondary_text || 'Watch Demo');
         this._val('ps-cms-cta-secondary-url', lCms.cta_secondary_url || '#features');
-        this._val('ps-cms-hero-stat1-val', lCms.hero_stat_1_val || '98.2%');
-        this._val('ps-cms-hero-stat1-lbl', lCms.hero_stat_1_lbl || 'Quality Score');
-        this._val('ps-cms-hero-stat2-val', lCms.hero_stat_2_val || 'A+');
-        this._val('ps-cms-hero-stat2-lbl', lCms.hero_stat_2_lbl || 'Active Nodes');
-        this._val('ps-cms-hero-stat3-val', lCms.hero_stat_3_val || '1,204');
-        this._val('ps-cms-hero-stat3-lbl', lCms.hero_stat_3_lbl || '+12 this hour');
+        const heroImgUrl = lCms.hero_image_url || '/assets/images/hero-mockup-default.png';
+        this._val('ps-cms-hero-image-url', heroImgUrl);
+        this.previewHeroImageUrl(heroImgUrl);
         this._val('ps-cms-hero-feature1', lCms.hero_feature_1 || 'Enterprise Secure');
         this._val('ps-cms-hero-feature2', lCms.hero_feature_2 || 'Global Scale');
         this._val('ps-cms-hero-feature3', lCms.hero_feature_3 || 'High Precision');
@@ -619,7 +616,7 @@ const PlatformSettings = {
         this._val('ps-cms-pricing-subtitle', lCms.pricing_subtitle || 'Scale your quality operations without complexity.');
         const defaultPricing = [
             { name: 'Starter', badge: '', price: '₹0', period: '/month (14d Trial)', desc: 'For small focused teams', features: ['50 Users Max', 'Basic QC Workflow', 'Limited Reports', '14 Days Free Trial'], cta: 'Start Free Trial', cta_url: '/auth/register-org.html?plan=Starter' },
-            { name: 'Professional', badge: 'MOST POPULAR', price: '₹199', period: '/month', desc: 'Complete enterprise engine', features: ['500 Users', 'Full Workflow Engine', 'Analytics Dashboard', 'Repository + AI Assistant', 'Reports + Audit Logs'], cta: 'Start Free Trial', cta_url: '/auth/register-org.html?plan=Professional' },
+            { name: 'Professional', badge: 'MOST POPULAR', price: '₹199', period: '/month', desc: 'Complete enterprise engine', features: ['500 Users', 'Full Workflow Engine', 'Analytics Dashboard', 'Repository + AI Assistant', 'Reports + Audit Logs'], cta: 'Buy Now', cta_url: '/auth/register-org.html?plan=Professional' },
             { name: 'Enterprise', badge: '', price: 'Custom', period: '', desc: 'For global scale manufacturing', features: ['Unlimited Users', 'Multi Plant Support', 'White Label Branding', 'API Integration', 'Dedicated Support'], cta: 'Contact Sales', cta_url: 'openTalkToSalesModal()' }
         ];
         this.renderPricingPlans((lCms.pricing_plans && lCms.pricing_plans.length) ? lCms.pricing_plans : defaultPricing);
@@ -901,12 +898,7 @@ const PlatformSettings = {
                     cta_primary_url: this._getVal('ps-cms-cta-primary-url') || '/auth/register-org.html',
                     cta_secondary_text: this._getVal('ps-cms-cta-secondary'),
                     cta_secondary_url: this._getVal('ps-cms-cta-secondary-url') || '#features',
-                    hero_stat_1_val: this._getVal('ps-cms-hero-stat1-val'),
-                    hero_stat_1_lbl: this._getVal('ps-cms-hero-stat1-lbl'),
-                    hero_stat_2_val: this._getVal('ps-cms-hero-stat2-val'),
-                    hero_stat_2_lbl: this._getVal('ps-cms-hero-stat2-lbl'),
-                    hero_stat_3_val: this._getVal('ps-cms-hero-stat3-val'),
-                    hero_stat_3_lbl: this._getVal('ps-cms-hero-stat3-lbl'),
+                    hero_image_url: this._getVal('ps-cms-hero-image-url') || '/assets/images/hero-mockup-default.png',
                     hero_feature_1: this._getVal('ps-cms-hero-feature1') || 'Enterprise Secure',
                     hero_feature_2: this._getVal('ps-cms-hero-feature2') || 'Global Scale',
                     hero_feature_3: this._getVal('ps-cms-hero-feature3') || 'High Precision',
@@ -969,6 +961,63 @@ const PlatformSettings = {
             const iframe = document.getElementById('ps-cms-iframe');
             if(iframe) iframe.src = '/index.html?t=' + Date.now();
         } catch (e) { if (window.OctaQube) OctaQube.toast(e.message || 'Save failed.', 'error'); }
+    },
+
+        previewHeroImageUrl(url) {
+        const preview = document.getElementById('ps-cms-hero-image-preview');
+        if (preview) {
+            preview.src = url || '/assets/images/hero-mockup-default.png';
+        }
+    },
+
+    async uploadHeroImage(input) {
+        if (!input || !input.files || input.files.length === 0) return;
+        const file = input.files[0];
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const label = document.querySelector('label[for="ps-cms-hero-file-input"]');
+        const originalText = label ? label.innerHTML : '';
+        if (label) {
+            label.innerHTML = '<i data-lucide="loader-2" class="spinner me-1" style="width:14px;height:14px;"></i> Uploading...';
+            if (window.lucide) lucide.createIcons();
+        }
+
+        try {
+            const token = (window.api && window.api.token) || sessionStorage.getItem('token') || localStorage.getItem('token') || localStorage.getItem('access_token') || '';
+            const res = await fetch('/api/super-admin/landing-cms/upload-hero-image', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` },
+                body: formData
+            });
+            const data = await res.json();
+            if (res.ok && data.image_url) {
+                this._val('ps-cms-hero-image-url', data.image_url);
+                this.previewHeroImageUrl(data.image_url);
+                if (window.OctaQube) OctaQube.toast('Hero mockup image uploaded and applied successfully!', 'success');
+                const iframe = document.getElementById('ps-cms-iframe');
+                if (iframe) iframe.src = '/index.html?t=' + Date.now();
+            } else {
+                throw new Error(data.message || 'Upload failed');
+            }
+        } catch (e) {
+            if (window.OctaQube) OctaQube.toast(e.message || 'Error uploading hero image', 'error');
+            else alert(e.message || 'Error uploading hero image');
+        } finally {
+            if (label) {
+                label.innerHTML = originalText;
+                if (window.lucide) lucide.createIcons();
+            }
+            input.value = '';
+        }
+    },
+
+    async resetHeroImage() {
+        const defaultUrl = '/assets/images/hero-mockup-default.png';
+        this._val('ps-cms-hero-image-url', defaultUrl);
+        this.previewHeroImageUrl(defaultUrl);
+        await this.saveLandingCMS();
+        if (window.OctaQube) OctaQube.toast('Hero mockup image reset to default!', 'info');
     },
 
     async toggleLandingPageStatus(enabled, skipSave = false) {
