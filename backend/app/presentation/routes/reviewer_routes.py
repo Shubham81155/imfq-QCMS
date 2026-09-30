@@ -755,16 +755,13 @@ def _extract_project_impact_metrics(p, impact):
     return baseline_data, final_data, overall_kpi_pct, metrics, cost_savings
 
 def _get_impact_projects_list(user, is_admin):
-    approved_impact_ids = [s.project_id for s in Stage8Standardization.query.filter_by(status='Approved').all()]
-
     query = Project.query.filter(
         Project.org_id == user.org_id,
         Project.current_stage == 8,
-        ~Project.status.in_(['Closed', 'Pending CEO Review', 'Pending CEO Closure', 'Impact Approved', 'SOP Created', 'Pending Closure', 'Rejected', 'Stage 1 Rejected']),
-        Project.status.in_(['Stage 8 Reviewer Approved', 'Stage 8 Approved'])
+        Project.status.in_([
+            'Stage 8 Submitted', 'Stage 8 Reviewer Approved', 'Stage 8 Approved'
+        ])
     )
-    if approved_impact_ids:
-        query = query.filter(~Project.id.in_(approved_impact_ids))
 
     # Apply dept filter if user has a specific dept
     user_dept_id = None
@@ -799,7 +796,7 @@ def _get_impact_projects_list(user, is_admin):
             "final": final_data,
             "kpi_improvement_pct": kpi_pct or 0,
             "results_data": results_data,
-            "kpi_target": s7.action_plan if (s7 and s7.action_plan) else {},
+            "kpi_target": getattr(s7, 'action_plan', None) or {} if s7 else {},
             "cost_savings": cost_savings,
             "status": p.status,
             "impact_status": impact.status if impact else "Pending",

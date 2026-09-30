@@ -692,16 +692,19 @@
                                         type="button" 
                                         id="projectDropdownBtn" 
                                         data-bs-toggle="dropdown" 
-                                        data-bs-auto-close="true"
+                                        data-bs-auto-close="outside"
                                         aria-expanded="false" 
                                         style="height: 31px; border-radius: 8px;">
                                     <span id="selectedProjectLabel" class="text-truncate">-- Select Target Project --</span>
                                 </button>
                                 <div class="dropdown-menu p-2 shadow-lg border-0" aria-labelledby="projectDropdownBtn" style="min-width: 340px; width: 100%; border-radius: 12px; z-index: 1050; background: var(--ds-card-bg, #ffffff);">
-                                    <div class="p-1 mb-2 border-bottom pb-2">
+                                    <div class="p-1 mb-2 border-bottom pb-2" onclick="event.stopPropagation()">
                                         <div class="input-group input-group-sm">
                                             <span class="input-group-text bg-transparent border-end-0 text-muted"><i data-lucide="search" style="width:14px;height:14px;"></i></span>
-                                            <input type="text" id="projectSearchInput" class="form-control border-start-0 text-xs shadow-none" placeholder="Search Project ID or Title..." oninput="Analytics.filterProjectDropdown(this.value)">
+                                            <input type="text" id="projectSearchInput" class="form-control border-start-0 border-end-0 text-xs shadow-none" placeholder="Search Project ID, Title, or Dept..." oninput="Analytics.filterProjectDropdown(this.value)" onclick="event.stopPropagation()" onkeydown="event.stopPropagation()">
+                                            <button class="btn btn-outline-secondary border-start-0 text-muted px-2" type="button" id="clearProjectSearchBtn" onclick="Analytics.clearProjectSearch(event)" title="Clear search" style="display: none;">
+                                                <i data-lucide="x" style="width:12px;height:12px;"></i>
+                                            </button>
                                         </div>
                                     </div>
                                     <div id="projectDropdownList" class="custom-scroll" style="max-height: 230px; overflow-y: auto;">
@@ -1218,7 +1221,12 @@
                 if (dropdownWrapper) {
                     dropdownWrapper.addEventListener('shown.bs.dropdown', () => {
                         const searchInput = document.getElementById('projectSearchInput');
-                        if (searchInput) searchInput.focus();
+                        if (searchInput) {
+                            searchInput.focus();
+                            if (!searchInput.value.trim() && (!this.projects || this.projects.length === 0)) {
+                                this.loadProjectsList();
+                            }
+                        }
                     });
                 }
 
@@ -1412,6 +1420,16 @@
             renderProjectRosterTable(items) {
                 const body = document.getElementById('projectRosterTableBody');
                 if (!body) return;
+
+                // Sync with this.projects if this.projects is not yet populated
+                if ((!this.projects || this.projects.length === 0) && items && items.length > 0) {
+                    this.projects = [...items];
+                    this.renderProjectDropdown(this.projects);
+                    if (this.selectedProjectId) {
+                        this.updateSelectedProjectLabel(this.selectedProjectId);
+                    }
+                }
+
                 if (!items || items.length === 0) {
                     body.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">No projects found.</td></tr>';
                     return;
@@ -1451,8 +1469,8 @@
                             return `<span class="fw-bold text-danger">${Math.abs(d)}d overdue</span>`;
                         })()}</td>
                         <td class="text-end" style="padding-right: 20px;">
-                            <button class="btn btn-xs btn-outline-primary" onclick="Analytics.selectProjectFromRoster(${p.id})">
-                                Inspect
+                            <button type="button" class="btn btn-xs btn-outline-primary d-inline-flex align-items-center gap-1" onclick="Analytics.selectProjectFromRoster(${p.id})" title="Inspect Project Details">
+                                <i data-lucide="eye" style="width:12px;height:12px;"></i> Inspect
                             </button>
                         </td>
                     </tr>
@@ -1525,6 +1543,7 @@
                     if (indContainer) indContainer.classList.remove('d-none');
                     if (overallView) overallView.classList.add('d-none');
                     if (indView) indView.classList.remove('d-none');
+                    this.scrollToTop();
 
                     const selector = document.getElementById('projectSelector');
                     if (selector && selector.value) {
@@ -1581,6 +1600,22 @@
                 const details = indData.project_details || {};
                 this.currentProjectStatus = details.status || '';
                 this.updatePdfDownloadVisibility();
+
+                // Synchronize dropdown label and projects cache with individual project data
+                if (details && (details.id || details.project_uid)) {
+                    const pId = details.id || this.selectedProjectId;
+                    this.updateSelectedProjectLabel(pId, details);
+                    if (this.projects && !this.projects.some(p => String(p.id) === String(pId))) {
+                        this.projects.unshift({
+                            id: pId,
+                            project_uid: details.project_uid || ('PRJ-' + pId),
+                            title: details.title || 'Selected Project',
+                            department: details.department || '',
+                            status: details.status || ''
+                        });
+                        this.renderProjectDropdown(this.projects);
+                    }
+                }
                 const kpis = indData.project_kpis || {};
                 const facil = indData.facilitator || {};
                 const rev = indData.reviewer || {};
@@ -1683,6 +1718,11 @@
                 // Render Project Audit Trail & Lifecycle Activity
                 this.renderProjectLogs('all');
 
+                if (this.pendingScrollToTop) {
+                    this.scrollToTop();
+                    this.pendingScrollToTop = false;
+                }
+
                 // Engagement
                 if (document.getElementById('indTotalMeetings')) {
                     const mtgVal = (engagement.total_meetings_held !== undefined && engagement.total_meetings_held !== null) ? engagement.total_meetings_held : 0;
@@ -1744,16 +1784,67 @@
             },
 
             selectProjectFromRoster(projectId) {
+                this.pendingScrollToTop = true;
+                this.scrollToTop();
                 this.setScope('individual');
                 this.selectProjectFromDropdown(projectId);
+                this.scrollToTop();
+                requestAnimationFrame(() => this.scrollToTop());
+                setTimeout(() => this.scrollToTop(), 60);
+                setTimeout(() => this.scrollToTop(), 180);
+            },
+
+            scrollToTop() {
+                try {
+                    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+                } catch (_) {
+                    window.scrollTo(0, 0);
+                }
+                if (document.documentElement && document.documentElement.scrollTop > 0) {
+                    document.documentElement.scrollTop = 0;
+                }
+                if (document.body && document.body.scrollTop > 0) {
+                    document.body.scrollTop = 0;
+                }
+                const scrollTargets = ['.app-main', 'main', '.app-content-inner', '.app-layout'];
+                scrollTargets.forEach(selector => {
+                    const el = document.querySelector(selector);
+                    if (el && el.scrollTop > 0) el.scrollTop = 0;
+                });
             },
 
             async loadProjectsList() {
                 try {
-                    const projects = await api.get('/projects');
-                    const allProjects = Array.isArray(projects) ? projects : (projects.data || []);
+                    let allProjects = [];
+                    try {
+                        const projects = await api.get('/projects');
+                        if (Array.isArray(projects)) {
+                            allProjects = projects;
+                        } else if (projects && Array.isArray(projects.items)) {
+                            allProjects = projects.items;
+                        } else if (projects && Array.isArray(projects.data)) {
+                            allProjects = projects.data;
+                        } else if (projects && Array.isArray(projects.projects)) {
+                            allProjects = projects.projects;
+                        }
+                    } catch (err) {
+                        console.warn("[Analytics] /projects endpoint failed, falling back to roster:", err);
+                    }
+
+                    if (allProjects.length === 0) {
+                        // Fallback to /analytics/project-roster to ensure projects are always accessible in analytics
+                        try {
+                            const rosterRes = await api.get('/analytics/project-roster?per_page=200');
+                            const rosterItems = Array.isArray(rosterRes) ? rosterRes : (rosterRes?.items || rosterRes?.data || []);
+                            if (rosterItems.length > 0) {
+                                allProjects = rosterItems;
+                            }
+                        } catch (err2) {
+                            console.error("[Analytics] Fallback to project roster also failed:", err2);
+                        }
+                    }
+
                     this.projects = allProjects;
-                    
                     this.renderProjectDropdown(allProjects);
                     if (this.selectedProjectId) {
                         this.updateSelectedProjectLabel(this.selectedProjectId);
@@ -1783,7 +1874,7 @@
 
                     return `
                         <div class="dropdown-item rounded-2 py-2 px-2 cursor-pointer ${isSelected ? 'active bg-primary text-white' : ''}" 
-                             onclick="Analytics.selectProjectFromDropdown('${pId}')"
+                             onclick="Analytics.selectProjectFromDropdown('${pId}')" 
                              style="font-size: 0.8rem; cursor: pointer;">
                             <div class="d-flex align-items-center justify-content-between">
                                 <span class="fw-bold ${isSelected ? 'text-white' : 'text-primary'}">${escape(uid)}</span>
@@ -1796,18 +1887,60 @@
             },
 
             filterProjectDropdown(query) {
-                const q = (query || '').trim().toLowerCase();
+                const clearBtn = document.getElementById('clearProjectSearchBtn');
+                const rawQ = query || '';
+                if (clearBtn) {
+                    clearBtn.style.display = rawQ.trim().length > 0 ? 'inline-flex' : 'none';
+                }
+
+                // If projects list is empty, trigger loading
+                if (!this.projects || this.projects.length === 0) {
+                    this.loadProjectsList().then(() => {
+                        this.filterProjectDropdown(query);
+                    });
+                    return;
+                }
+
+                const q = rawQ.trim().toLowerCase();
                 if (!q) {
                     this.renderProjectDropdown(this.projects || []);
                     return;
                 }
+
+                // Multi-token search (each space-separated word must match at least one field)
+                const tokens = q.split(/\s+/).filter(Boolean);
+
                 const filtered = (this.projects || []).filter(p => {
-                    const uid = (p.project_uid || ('PRJ-' + p.id)).toLowerCase();
-                    const title = (p.title || '').toLowerCase();
-                    const dept = (p.department || '').toLowerCase();
-                    return uid.includes(q) || title.includes(q) || dept.includes(q);
+                    const uid = String(p.project_uid || ('PRJ-' + p.id)).toLowerCase();
+                    const cleanUid = uid.replace(/[^a-z0-9]/gi, '');
+                    const title = String(p.title || '').toLowerCase();
+                    const dept = String(p.department || '').toLowerCase();
+                    const cat = String(p.category || '').toLowerCase();
+                    const status = String(p.status || '').toLowerCase();
+                    const mgr = String(p.manager || p.team_leader_name || '').toLowerCase();
+                    const idStr = String(p.id || '');
+
+                    const combined = `${uid} ${cleanUid} ${title} ${dept} ${cat} ${status} ${mgr} ${idStr}`;
+
+                    return tokens.every(token => combined.includes(token));
                 });
+
                 this.renderProjectDropdown(filtered);
+            },
+
+            clearProjectSearch(e) {
+                if (e) {
+                    e.stopPropagation();
+                    e.preventDefault();
+                }
+                const input = document.getElementById('projectSearchInput');
+                if (input) {
+                    input.value = '';
+                    input.focus();
+                }
+                const clearBtn = document.getElementById('clearProjectSearchBtn');
+                if (clearBtn) clearBtn.style.display = 'none';
+                this.renderProjectDropdown(this.projects || []);
             },
 
             selectProjectFromDropdown(projectId) {
@@ -1827,12 +1960,15 @@
                 }
             },
 
-            updateSelectedProjectLabel(projectId) {
-                const proj = (this.projects || []).find(p => String(p.id) === String(projectId));
+            updateSelectedProjectLabel(projectId, fallbackDetails = null) {
+                let proj = (this.projects || []).find(p => String(p.id) === String(projectId));
+                if (!proj && fallbackDetails) {
+                    proj = fallbackDetails;
+                }
                 const labelEl = document.getElementById('selectedProjectLabel');
                 if (proj && labelEl) {
-const uid = proj.project_uid || ('PRJ-' + proj.id);
-                    labelEl.textContent = `${uid} - ${proj.title}`;
+                    const uid = proj.project_uid || ('PRJ-' + (proj.id || ''));
+                    labelEl.textContent = `${uid} - ${proj.title || 'Selected Project'}`;
                 } else if (labelEl && !projectId) {
                     labelEl.textContent = '-- Select Target Project --';
                 }

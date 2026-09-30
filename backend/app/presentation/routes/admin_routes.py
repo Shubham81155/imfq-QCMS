@@ -1583,22 +1583,16 @@ def disassociate_and_delete_user(target_user, admin_user_id=None):
     disassociating audit logs and project references so historical
     records remain 100% intact with deleted user timestamp notes.
     """
+    if not target_user:
+        return
+
     uid = target_user.id
     org_id = target_user.org_id
     uname = target_user.username
     uemail = target_user.email
     now_str = datetime.now(timezone.utc).replace(tzinfo=None).strftime('%Y-%m-%d %H:%M:%S UTC')
 
-    import app.infrastructure.database.models.models as models_mod
-    from app.infrastructure.database.models.models import AuditLog
-
-    # 1. Clean audit logs owned by target_user
-    try:
-        AuditLog.query.filter_by(user_id=uid).delete(synchronize_session=False)
-    except Exception as e:
-        print(f"[DELETE USER AUDIT LOG WARNING] {e}")
-
-    # 2. Log explicit deletion audit record
+    # Log explicit deletion audit record
     if admin_user_id:
         try:
             log_action(
@@ -1618,97 +1612,19 @@ def disassociate_and_delete_user(target_user, admin_user_id=None):
         except Exception:
             pass
 
-    # 3. Disassociate optional nullable FK references across all modules
-    nullify_specs = [
-        ('ProjectReview', 'reviewer_id'),
-        ('Project', 'creator_id'),
-        ('Project', 'team_leader_id'),
-        ('Project', 'facilitator_id'),
-        ('Project', 'reviewer_id'),
-        ('ProjectWorkflow', 'updated_by'),
-        ('Stage1ProblemDefinition', 'facilitator_approver_id'),
-        ('Stage2ObservationDataCollection', 'reviewer_id'),
-        ('Stage3CauseIdentification', 'facilitator_approver_id'),
-        ('Stage4RootCauseAnalysis', 'reviewer_id'),
-        ('Stage5CountermeasurePlanning', 'facilitator_id'),
-        ('Stage5CountermeasurePlanning', 'reviewer_id'),
-        ('Stage6Implementation', 'reviewer_id'),
-        ('Stage7PerformanceVerification', 'reviewer_id'),
-        ('Stage8Standardization', 'approved_by'),
-        ('Stage8Standardization', 'final_approval_by'),
-        ('SOP', 'owner_id'),
-        ('SOP', 'author_id'),
-        ('SOP', 'reviewer_id'),
-        ('SOP', 'approver_id'),
-        ('SupportTicket', 'user_id'),
-        ('SupportTicket', 'assigned_engineer_id'),
-        ('FacilitatorNote', 'created_by'),
-        ('IssueEscalation', 'escalated_by_id'),
-        ('IssueEscalation', 'escalated_to_id'),
-        ('LessonLearned', 'created_by_id'),
-        ('KnowledgeRepository', 'created_by_id'),
-        ('KnowledgeRepositoryVerification', 'verified_by_id'),
-        ('SOPVersionHistory', 'changed_by_id'),
-        ('SOPAssignment', 'assigned_by_id'),
-        ('StandardizationDocument', 'uploaded_by_id'),
-        ('AnnouncementAttachment', 'uploaded_by'),
-        ('AnnouncementAudit', 'user_id'),
-        ('EmailNotificationLog', 'user_id'),
-        ('EmailNotificationLog', 'sent_by_id'),
-        ('UserCustomFieldValue', 'created_by_id'),
-        ('UserCustomFieldValue', 'updated_by_id')
-    ]
-    for model_name, attr_name in nullify_specs:
-        try:
-            model_cls = getattr(models_mod, model_name, None)
-            if model_cls and hasattr(model_cls, attr_name):
-                model_cls.query.filter(getattr(model_cls, attr_name) == uid).update({attr_name: None}, synchronize_session=False)
-        except Exception as e:
-            print(f"[DELETE USER NULLIFY WARNING {model_name}.{attr_name}] {e}")
-
-    # 4. Delete user-owned child records (ephemeral / activity logs)
-    delete_specs = [
-        ('ProjectMember', 'user_id'),
-        ('ProjectWorkflow', 'updated_by'),
-        ('EmployeeLeaderboard', 'employee_id'),
-        ('EmployeePoints', 'employee_id'),
-        ('SaaSUserSession', 'user_id'),
-        ('Notification', 'user_id'),
-        ('MeetingLog', 'user_id'),
-        ('TeamMemberLog', 'user_id'),
-        ('KnowledgeRepositoryRating', 'user_id'),
-        ('SOPTraining', 'user_id'),
-        ('SOPComment', 'user_id'),
-        ('SOPFeedback', 'user_id'),
-        ('SOPQuizAttempt', 'user_id'),
-        ('AnnouncementDelivery', 'user_id'),
-        ('AnnouncementRead', 'user_id'),
-        ('AnnouncementAudit', 'user_id'),
-        ('EmailNotificationLog', 'user_id')
-    ]
-    for model_name, attr_name in delete_specs:
-        try:
-            model_cls = getattr(models_mod, model_name, None)
-            if model_cls and hasattr(model_cls, attr_name):
-                model_cls.query.filter(getattr(model_cls, attr_name) == uid).delete(synchronize_session=False)
-        except Exception as e:
-            print(f"[DELETE USER CHILD DELETE WARNING {model_name}.{attr_name}] {e}")
-
-    # 5. Execute hard delete on target_user
-    db.session.delete(target_user)
+    batch_disassociate_and_delete_users([target_user], admin_user_id=admin_user_id)
 
 
 def batch_disassociate_and_delete_users(user_list, admin_user_id=None):
     """
-    High-performance batch disassociation and deletion of multiple users.
-    Executes single set-based SQL queries using IN (:uids) instead of iterating one-by-one,
-    speeding up bulk deletion by 100x-200x.
+    High-performance, comprehensive batch disassociation and deletion of multiple users.
+    Dynamically discovers and handles ALL foreign key constraints pointing to users.id:
+      - Nullifies nullable foreign keys (e.g. project reviewer_id, creator_id, stage approvers/reviewers/closure)
+      - Deletes orphaned dependent records on non-nullable foreign keys (e.g. project_members, analytics_usage, facilitator_notes)
+      - Reassigns critical administrative records (offline payments, support tickets) to admin_user_id
     """
     if not user_list:
         return
-
-    import app.infrastructure.database.models.models as models_mod
-    from app.infrastructure.database.models.models import AuditLog
 
     uids = [u.id for u in user_list if u and u.id]
     if not uids:
@@ -1718,14 +1634,26 @@ def batch_disassociate_and_delete_users(user_list, admin_user_id=None):
     org_id = first_user.org_id
     now_str = datetime.now(timezone.utc).replace(tzinfo=None).strftime('%Y-%m-%d %H:%M:%S UTC')
 
-    # 1. Clean audit logs owned by these users in one batch query
+    # 1. Reassign critical administrative ownership to admin_user_id if provided
+    if admin_user_id:
+        try:
+            from app.infrastructure.database.models.billing import OfflinePaymentProof
+            from app.infrastructure.database.models.models import SupportTicket, SupportKnowledge
+            OfflinePaymentProof.query.filter(OfflinePaymentProof.user_id.in_(uids)).update({'user_id': admin_user_id}, synchronize_session=False)
+            SupportTicket.query.filter(SupportTicket.user_id.in_(uids)).update({'user_id': admin_user_id}, synchronize_session=False)
+            SupportKnowledge.query.filter(SupportKnowledge.created_by_id.in_(uids)).update({'created_by_id': admin_user_id}, synchronize_session=False)
+        except Exception as e:
+            print(f"[REASSIGN OWNERSHIP WARNING] {e}")
+
+    # 2. Clean audit logs owned by these users in one batch query
     try:
+        from app.infrastructure.database.models.models import AuditLog
         AuditLog.query.filter(AuditLog.user_id.in_(uids)).delete(synchronize_session=False)
     except Exception as e:
         print(f"[BATCH DELETE USER AUDIT LOG WARNING] {e}")
 
-    # 2. Log batch deletion audit record
-    if admin_user_id:
+    # 3. Log batch deletion audit record if multiple users
+    if admin_user_id and len(uids) > 1:
         try:
             log_action(
                 admin_user_id,
@@ -1743,85 +1671,25 @@ def batch_disassociate_and_delete_users(user_list, admin_user_id=None):
         except Exception:
             pass
 
-    # 3. Disassociate optional nullable FK references across all modules in batch queries
-    nullify_specs = [
-        ('ProjectReview', 'reviewer_id'),
-        ('Project', 'creator_id'),
-        ('Project', 'team_leader_id'),
-        ('Project', 'facilitator_id'),
-        ('Project', 'reviewer_id'),
-        ('ProjectWorkflow', 'updated_by'),
-        ('Stage1ProblemDefinition', 'facilitator_approver_id'),
-        ('Stage2ObservationDataCollection', 'reviewer_id'),
-        ('Stage3CauseIdentification', 'facilitator_approver_id'),
-        ('Stage4RootCauseAnalysis', 'reviewer_id'),
-        ('Stage5CountermeasurePlanning', 'facilitator_id'),
-        ('Stage5CountermeasurePlanning', 'reviewer_id'),
-        ('Stage6Implementation', 'reviewer_id'),
-        ('Stage7PerformanceVerification', 'reviewer_id'),
-        ('Stage8Standardization', 'approved_by'),
-        ('Stage8Standardization', 'final_approval_by'),
-        ('SOP', 'owner_id'),
-        ('SOP', 'author_id'),
-        ('SOP', 'reviewer_id'),
-        ('SOP', 'approver_id'),
-        ('SupportTicket', 'user_id'),
-        ('SupportTicket', 'assigned_engineer_id'),
-        ('FacilitatorNote', 'created_by'),
-        ('IssueEscalation', 'escalated_by_id'),
-        ('IssueEscalation', 'escalated_to_id'),
-        ('LessonLearned', 'created_by_id'),
-        ('KnowledgeRepository', 'created_by_id'),
-        ('KnowledgeRepositoryVerification', 'verified_by_id'),
-        ('SOPVersionHistory', 'changed_by_id'),
-        ('SOPAssignment', 'assigned_by_id'),
-        ('StandardizationDocument', 'uploaded_by_id'),
-        ('AnnouncementAttachment', 'uploaded_by'),
-        ('AnnouncementAudit', 'user_id'),
-        ('EmailNotificationLog', 'user_id'),
-        ('EmailNotificationLog', 'sent_by_id'),
-        ('UserCustomFieldValue', 'created_by_id'),
-        ('UserCustomFieldValue', 'updated_by_id')
-    ]
-    for model_name, attr_name in nullify_specs:
-        try:
-            model_cls = getattr(models_mod, model_name, None)
-            if model_cls and hasattr(model_cls, attr_name):
-                col = getattr(model_cls, attr_name)
-                model_cls.query.filter(col.in_(uids)).update({attr_name: None}, synchronize_session=False)
-        except Exception as e:
-            print(f"[BATCH DELETE USER NULLIFY WARNING {model_name}.{attr_name}] {e}")
+    # 4. Dynamically disassociate all foreign keys referencing users.id across all database tables
+    user_table = User.__table__
+    for table in db.metadata.sorted_tables:
+        if table.name in ('users', 'organizations'):
+            continue
+        for fk in table.foreign_keys:
+            if fk.column == user_table.c.id:
+                col = fk.parent
+                try:
+                    if col.nullable:
+                        # Nullify nullable foreign key references (e.g. project reviewer/facilitator/creator, stage approvers)
+                        db.session.execute(table.update().where(col.in_(uids)).values({col.name: None}))
+                    else:
+                        # Delete dependent child rows that cannot have NULL user (e.g. project_members, analytics_usage)
+                        db.session.execute(table.delete().where(col.in_(uids)))
+                except Exception as ex:
+                    print(f"[BATCH DELETE USER DISASSOCIATE WARNING {table.name}.{col.name}] {ex}")
 
-    # 4. Delete user-owned child records in batch queries
-    delete_specs = [
-        ('ProjectMember', 'user_id'),
-        ('ProjectWorkflow', 'updated_by'),
-        ('EmployeeLeaderboard', 'employee_id'),
-        ('EmployeePoints', 'employee_id'),
-        ('SaaSUserSession', 'user_id'),
-        ('Notification', 'user_id'),
-        ('MeetingLog', 'user_id'),
-        ('TeamMemberLog', 'user_id'),
-        ('KnowledgeRepositoryRating', 'user_id'),
-        ('SOPTraining', 'user_id'),
-        ('SOPComment', 'user_id'),
-        ('SOPFeedback', 'user_id'),
-        ('SOPQuizAttempt', 'user_id'),
-        ('AnnouncementDelivery', 'user_id'),
-        ('AnnouncementRead', 'user_id'),
-        ('AnnouncementAudit', 'user_id'),
-        ('EmailNotificationLog', 'user_id')
-    ]
-    for model_name, attr_name in delete_specs:
-        try:
-            model_cls = getattr(models_mod, model_name, None)
-            if model_cls and hasattr(model_cls, attr_name):
-                col = getattr(model_cls, attr_name)
-                model_cls.query.filter(col.in_(uids)).delete(synchronize_session=False)
-        except Exception as e:
-            print(f"[BATCH DELETE USER CHILD DELETE WARNING {model_name}.{attr_name}] {e}")
-
-    # 5. Execute batch delete on users
+    # 5. Execute batch delete on users table
     User.query.filter(User.id.in_(uids)).delete(synchronize_session=False)
 
 
