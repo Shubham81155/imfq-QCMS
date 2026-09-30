@@ -143,6 +143,13 @@
             text-decoration: underline;
         }
 
+        .char-counter,
+        #otpCodeFieldContainer .char-counter,
+        .no-counter + .char-counter,
+        .no-counter ~ .char-counter {
+            display: none !important;
+        }
+
         .login-footer {
             text-align: center;
             margin-top: var(--ds-space-10);
@@ -235,7 +242,7 @@
                         <label class="ds-label mb-0"><i data-lucide="key-round"></i> 6-Digit Verification Code <span class="text-danger">*</span></label>
                         <a href="javascript:void(0)" class="text-xxs fw-semibold text-secondary hover-underline" onclick="resetOtpStep()" style="font-size: 0.75rem; text-decoration: none; color: var(--ds-accent);">Change Email / Phone</a>
                     </div>
-                    <input type="text" class="ds-input text-center fw-bold" id="loginOtpInput" placeholder="••••••" maxlength="6" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" style="letter-spacing: 8px; font-size: 1.25rem; font-family: monospace; background: var(--ds-bg-surface);">
+                    <input type="text" class="ds-input text-center fw-bold no-counter" id="loginOtpInput" data-no-counter="true" placeholder="••••••" maxlength="6" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" style="letter-spacing: 8px; font-size: 1.25rem; font-family: monospace; background: var(--ds-bg-surface);">
                     <div class="d-flex justify-content-between align-items-center mt-2">
                         <span class="text-xxs text-muted" id="otpDestinationHint" style="font-size: 0.75rem;">Code valid for 10 minutes.</span>
                         <div id="otpResendContainer">

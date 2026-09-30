@@ -136,6 +136,23 @@ class EnterpriseValidator {
             if (field.dataset.counterBound) return;
             field.dataset.counterBound = "true";
 
+            // Skip OTP, password, or fields explicitly marked with data-no-counter or .no-counter
+            const fId = (field.id || '').toLowerCase();
+            const fClass = (field.className || '').toLowerCase();
+            const fName = (field.name || '').toLowerCase();
+            if (
+                field.dataset.noCounter === "true" ||
+                field.hasAttribute('data-no-counter') ||
+                field.classList.contains('no-counter') ||
+                field.type === 'password' ||
+                field.getAttribute('autocomplete') === 'one-time-code' ||
+                fId.includes('otp') ||
+                fClass.includes('otp') ||
+                fName.includes('otp')
+            ) {
+                return;
+            }
+
             const max = field.getAttribute('maxlength') || field.dataset.maxLength;
             if (!max) return;
 
