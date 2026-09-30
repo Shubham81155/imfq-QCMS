@@ -1844,6 +1844,16 @@ select option {
 
 /* --- End of File --- */
 
+/* Suppress floating widgets on auth pages and screens with login-wrapper */
+body:has(.login-wrapper) #ai-chat-widget,
+body:has(.login-wrapper) #helpdesk-widget,
+.login-wrapper ~ #ai-chat-widget,
+.login-wrapper ~ #helpdesk-widget,
+body.auth-page #ai-chat-widget,
+body.auth-page #helpdesk-widget {
+    display: none !important;
+}
+
 /* --- AI Chat Assistant Widget --- */
 #ai-chat-widget {
     position: fixed;

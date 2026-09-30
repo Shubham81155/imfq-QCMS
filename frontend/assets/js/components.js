@@ -520,6 +520,8 @@ const OctaQube = {
         const publicPages = [
             'login.html',
             'login',
+            'login-otp.html',
+            'login-otp',
             'register.html',
             'register',
             'register-org.html',
@@ -533,13 +535,24 @@ const OctaQube = {
             'accept-invite.html',
             'accept-invite',
             'maintenance.html',
-            'maintenance'
+            'maintenance',
+            'page.html',
+            'page'
         ];
+        const isAuthFlow = (
+            path.includes('/auth/login') ||
+            path.includes('/auth/register') ||
+            path.includes('/auth/forgot-password') ||
+            path.includes('/auth/reset-password') ||
+            path.includes('/auth/verify-email') ||
+            path.includes('/auth/accept-invite')
+        );
         return (
             path === '/' ||
             path === '' ||
             page === 'index.html' ||
             page === '' ||
+            isAuthFlow ||
             publicPages.includes(page)
         );
     },
@@ -2721,6 +2734,7 @@ const OctaQube = {
      * AI Chat Assistant Widget
      */
     renderAIChatWidget() {
+        if (this.isPublicOrAuthPage()) return;
         if (window.location.pathname.includes('super-admin.html') || window.location.href.includes('super-admin.html')) return;
         if (document.getElementById('ai-chat-widget')) return;
 
@@ -2923,6 +2937,7 @@ const OctaQube = {
      * Floating Helpdesk Support Ticket Widget
      */
     renderHelpdeskWidget() {
+        if (this.isPublicOrAuthPage()) return;
         if (window.location.pathname.includes('super-admin.html') || window.location.href.includes('super-admin.html')) return;
         if (document.getElementById('helpdesk-widget')) return;
 

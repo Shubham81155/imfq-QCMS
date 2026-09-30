@@ -544,6 +544,8 @@
         'index',
         'login.html',
         'login',
+        'login-otp.html',
+        'login-otp',
         'register.html',
         'register',
         'register-org.html',
