@@ -56,11 +56,23 @@ def calculate_weighted_progress(current_stage, weights=None):
     if not weights or not isinstance(weights, list) or len(weights) < 1:
         weights = [12.5] * 8
     
-    n_stages = len(weights)
-    stage = max(1, min(n_stages, int(current_stage or 1)))
-    # Sum weights of completed/current stages (1 to stage)
-    cum_pct = sum(weights[:stage])
-    return min(100.0, max(0.0, cum_pct))
+    clean_weights = []
+    for w in weights:
+        try:
+            clean_weights.append(float(w))
+        except (ValueError, TypeError):
+            clean_weights.append(12.5)
+    if not clean_weights:
+        clean_weights = [12.5] * 8
+
+    n_stages = len(clean_weights)
+    try:
+        stage = max(1, min(n_stages, int(current_stage or 1)))
+    except (ValueError, TypeError):
+        stage = 1
+
+    cum_pct = sum(clean_weights[:stage])
+    return min(100.0, max(0.0, float(cum_pct)))
 
 
 def calculate_project_realtime_efficiency(project_id, project_current_stage=1, preloaded_wfs=None):
@@ -73,487 +85,574 @@ def calculate_project_realtime_efficiency(project_id, project_current_stage=1, p
     5. Fallback workflow milestone execution efficiency based on stage completion velocity
     Supports optional preloaded_wfs dict ({stage_id: data}) for zero-query batch calculation.
     """
-    from app.infrastructure.database.models.models import (
-        ProjectWorkflow,
-        Stage7PerformanceVerificationBenefitsRealization,
-        Stage8StandardizationKnowledgeSharingProjectClosure,
-        KnowledgeRepository
-    )
+    try:
+        from app.infrastructure.database.models.models import (
+            ProjectWorkflow,
+            Stage7PerformanceVerificationBenefitsRealization,
+            Stage8StandardizationKnowledgeSharingProjectClosure,
+            KnowledgeRepository
+        )
 
-    stage_num = max(1, min(8, int(project_current_stage or 1)))
+        try:
+            stage_num = max(1, min(8, int(project_current_stage or 1)))
+        except (ValueError, TypeError):
+            stage_num = 1
 
-    # 1. Check ProjectWorkflow Stage 7 (Verified Before vs After / KPI Verification / ROI)
-    if preloaded_wfs is not None:
-        d7 = preloaded_wfs.get(7)
-    else:
-        wf7 = ProjectWorkflow.query.filter_by(project_id=project_id, stage_id=7).first()
-        d7 = wf7.data if wf7 else None
+        # 1. Check ProjectWorkflow Stage 7 (Verified Before vs After / KPI Verification / ROI)
+        if preloaded_wfs is not None:
+            d7 = preloaded_wfs.get(7)
+        else:
+            wf7 = ProjectWorkflow.query.filter_by(project_id=project_id, stage_id=7).first()
+            d7 = wf7.data if wf7 else None
 
-    if d7:
-        # A. before_vs_after
-        bva = d7.get('before_vs_after') or d7.get('s7_before_vs_after') or []
-        if isinstance(bva, list) and len(bva) > 0:
-            imp_list = []
-            for r in bva:
-                if not isinstance(r, dict):
-                    continue
-                imp_p = parse_clean_float(r.get('improvement_pct'))
-                if imp_p is not None and imp_p > 0:
-                    imp_list.append(imp_p)
-                else:
-                    bef = parse_clean_float(r.get('before_condition'))
-                    aft = parse_clean_float(r.get('after_condition'))
-                    if bef and aft is not None and bef > 0:
-                        imp_list.append(round(((bef - aft) / bef) * 100, 1))
-            if imp_list:
-                return round(sum(imp_list) / len(imp_list), 1)
+        if d7:
+            # A. before_vs_after
+            bva = d7.get('before_vs_after') or d7.get('s7_before_vs_after') or []
+            if isinstance(bva, list) and len(bva) > 0:
+                imp_list = []
+                for r in bva:
+                    if not isinstance(r, dict):
+                        continue
+                    imp_p = parse_clean_float(r.get('improvement_pct'))
+                    if imp_p is not None and imp_p > 0:
+                        imp_list.append(imp_p)
+                    else:
+                        bef = parse_clean_float(r.get('before_condition'))
+                        aft = parse_clean_float(r.get('after_condition'))
+                        if bef and aft is not None and bef > 0:
+                            imp_list.append(round(((bef - aft) / bef) * 100, 1))
+                if imp_list:
+                    return round(sum(imp_list) / len(imp_list), 1)
 
-        # B. kpi_verification
-        kpi_ver = d7.get('kpi_verification') or d7.get('s7_kpi_verification') or []
-        if isinstance(kpi_ver, list) and len(kpi_ver) > 0:
-            kpi_imps = []
-            for r in kpi_ver:
-                if not isinstance(r, dict):
-                    continue
-                base = parse_clean_float(r.get('baseline'))
-                act = parse_clean_float(r.get('actual'))
-                if base and act is not None and base > 0:
-                    kpi_imps.append(round(abs(base - act) / base * 100, 1))
-            if kpi_imps:
-                return round(sum(kpi_imps) / len(kpi_imps), 1)
-
-        # C. roi_validation
-        roi = d7.get('roi_validation') or d7.get('s7_roi_validation') or {}
-        if isinstance(roi, dict):
-            kpi_imp = parse_clean_float(roi.get('kpi_improvement_pct') or roi.get('kpi_improvement') or roi.get('s7_roi_pct'))
-            if kpi_imp is not None and kpi_imp > 0:
-                return round(kpi_imp, 1)
-
-    # 2. Check ProjectWorkflow Stage 8 (Benefits Summary / Impact)
-    if preloaded_wfs is not None:
-        d8 = preloaded_wfs.get(8)
-    else:
-        wf8 = ProjectWorkflow.query.filter_by(project_id=project_id, stage_id=8).first()
-        d8 = wf8.data if wf8 else None
-
-    if d8:
-        bs = d8.get('benefits_summary') or d8.get('s8_benefits_summary') or []
-        if isinstance(bs, list) and len(bs) > 0:
-            b_imps = []
-            for r in bs:
-                if not isinstance(r, dict):
-                    continue
-                imp_val = parse_clean_float(r.get('improvement_pct') or r.get('kpi_improvement'))
-                if imp_val is not None and imp_val > 0:
-                    b_imps.append(imp_val)
-                else:
+            # B. kpi_verification
+            kpi_ver = d7.get('kpi_verification') or d7.get('s7_kpi_verification') or []
+            if isinstance(kpi_ver, list) and len(kpi_ver) > 0:
+                kpi_imps = []
+                for r in kpi_ver:
+                    if not isinstance(r, dict):
+                        continue
                     base = parse_clean_float(r.get('baseline'))
-                    fin = parse_clean_float(r.get('final'))
-                    if base and fin is not None and base > 0:
-                        b_imps.append(round(abs(base - fin) / base * 100, 1))
-            if b_imps:
-                return round(sum(b_imps) / len(b_imps), 1)
+                    act = parse_clean_float(r.get('actual'))
+                    if base and act is not None and base > 0:
+                        kpi_imps.append(round(abs(base - act) / base * 100, 1))
+                if kpi_imps:
+                    return round(sum(kpi_imps) / len(kpi_imps), 1)
 
-    # 3. Check Dedicated Stage Models
-    if preloaded_wfs is not None:
-        s7_model = preloaded_wfs.get('s7_model')
-    else:
-        s7_model = Stage7PerformanceVerificationBenefitsRealization.query.filter_by(project_id=project_id).first()
-    if s7_model:
-        bva = s7_model.before_vs_after
-        if isinstance(bva, list) and len(bva) > 0:
-            imp_list = [parse_clean_float(r.get('improvement_pct')) for r in bva if isinstance(r, dict) and parse_clean_float(r.get('improvement_pct')) is not None]
-            if imp_list:
-                return round(sum(imp_list) / len(imp_list), 1)
+            # C. roi_validation
+            roi = d7.get('roi_validation') or d7.get('s7_roi_validation') or {}
+            if isinstance(roi, dict):
+                kpi_imp = parse_clean_float(roi.get('kpi_improvement_pct') or roi.get('kpi_improvement') or roi.get('s7_roi_pct'))
+                if kpi_imp is not None and kpi_imp > 0:
+                    return round(kpi_imp, 1)
 
-    if preloaded_wfs is not None:
-        s8_model = preloaded_wfs.get('s8_model')
-    else:
-        s8_model = Stage8StandardizationKnowledgeSharingProjectClosure.query.filter_by(project_id=project_id).first()
-    if s8_model:
-        if s8_model.kpi_improvement_pct:
-            return round(float(s8_model.kpi_improvement_pct), 1)
-        if s8_model.productivity_gain:
-            p_gain = parse_clean_float(s8_model.productivity_gain)
-            if p_gain and p_gain > 0:
-                return round(p_gain, 1)
+        # 2. Check ProjectWorkflow Stage 8 (Benefits Summary / Impact)
+        if preloaded_wfs is not None:
+            d8 = preloaded_wfs.get(8)
+        else:
+            wf8 = ProjectWorkflow.query.filter_by(project_id=project_id, stage_id=8).first()
+            d8 = wf8.data if wf8 else None
 
-    # 4. Check Knowledge Repository (if archived/completed project)
-    if preloaded_wfs is not None:
-        repo = preloaded_wfs.get('repo')
-    else:
-        repo = KnowledgeRepository.query.filter_by(project_id=project_id).first()
-    if repo and repo.kpi_improvement_pct:
-        return round(float(repo.kpi_improvement_pct), 1)
+        if d8:
+            bs = d8.get('benefits_summary') or d8.get('s8_benefits_summary') or []
+            if isinstance(bs, list) and len(bs) > 0:
+                b_imps = []
+                for r in bs:
+                    if not isinstance(r, dict):
+                        continue
+                    imp_val = parse_clean_float(r.get('improvement_pct') or r.get('kpi_improvement'))
+                    if imp_val is not None and imp_val > 0:
+                        b_imps.append(imp_val)
+                    else:
+                        base = parse_clean_float(r.get('baseline'))
+                        fin = parse_clean_float(r.get('final'))
+                        if base and fin is not None and base > 0:
+                            b_imps.append(round(abs(base - fin) / base * 100, 1))
+                if b_imps:
+                    return round(sum(b_imps) / len(b_imps), 1)
 
-    # 5. Calculate Interim Realized Efficiency from Stage 1 Targets
-    if preloaded_wfs is not None:
-        d1 = preloaded_wfs.get(1)
-    else:
-        wf1 = ProjectWorkflow.query.filter_by(project_id=project_id, stage_id=1).first()
-        d1 = wf1.data if wf1 else None
+        # 3. Check Dedicated Stage Models
+        if preloaded_wfs is not None:
+            s7_model = preloaded_wfs.get('s7_model')
+        else:
+            s7_model = Stage7PerformanceVerificationBenefitsRealization.query.filter_by(project_id=project_id).first()
+        if s7_model:
+            bva = s7_model.before_vs_after
+            if isinstance(bva, list) and len(bva) > 0:
+                imp_list = [parse_clean_float(r.get('improvement_pct')) for r in bva if isinstance(r, dict) and parse_clean_float(r.get('improvement_pct')) is not None]
+                if imp_list:
+                    return round(sum(imp_list) / len(imp_list), 1)
 
-    if d1:
-        tts = d1.get('theme_target_schedule') or d1.get('s1_theme_target_schedule') or {}
-        cur = parse_clean_float(tts.get('current_level') or d1.get('s1_tts_current'))
-        tgt = parse_clean_float(tts.get('target_level') or d1.get('s1_tts_target'))
-        if cur and tgt is not None and cur > 0:
-            target_pct = abs(cur - tgt) / cur * 100.0
-            stage_factor = min(1.0, stage_num / 8.0)
-            interim_eff = target_pct * stage_factor
-            if interim_eff > 0:
+        if preloaded_wfs is not None:
+            s8_model = preloaded_wfs.get('s8_model')
+        else:
+            s8_model = Stage8StandardizationKnowledgeSharingProjectClosure.query.filter_by(project_id=project_id).first()
+        if s8_model:
+            if s8_model.kpi_improvement_pct:
+                val = parse_clean_float(s8_model.kpi_improvement_pct)
+                if val is not None and val > 0:
+                    return round(val, 1)
+            if s8_model.productivity_gain:
+                p_gain = parse_clean_float(s8_model.productivity_gain)
+                if p_gain and p_gain > 0:
+                    return round(p_gain, 1)
+
+        # 4. Check Knowledge Repository (if archived/completed project)
+        if preloaded_wfs is not None:
+            repo = preloaded_wfs.get('repo')
+        else:
+            repo = KnowledgeRepository.query.filter_by(project_id=project_id).first()
+        if repo and repo.kpi_improvement_pct:
+            val = parse_clean_float(repo.kpi_improvement_pct)
+            if val is not None and val > 0:
+                return round(val, 1)
+
+        # 5. Calculate Interim Realized Efficiency from Stage 1 Targets
+        if preloaded_wfs is not None:
+            d1 = preloaded_wfs.get(1)
+        else:
+            wf1 = ProjectWorkflow.query.filter_by(project_id=project_id, stage_id=1).first()
+            d1 = wf1.data if wf1 else None
+
+        if d1:
+            tts = d1.get('theme_target_schedule') or d1.get('s1_theme_target_schedule') or {}
+            cur = parse_clean_float(tts.get('current_level') or d1.get('s1_tts_current'))
+            tgt = parse_clean_float(tts.get('target_level') or d1.get('s1_tts_target'))
+            if cur and tgt is not None and cur > 0:
+                target_pct = abs(cur - tgt) / cur * 100.0
+                stage_factor = min(1.0, stage_num / 8.0)
+                interim_eff = target_pct * stage_factor
+                if interim_eff > 0:
+                    return round(interim_eff, 1)
+
+            # Check cp (current performance defect rate vs target)
+            cp = d1.get('current_performance') or d1.get('s1_current_performance') or {}
+            cp_def = parse_clean_float(cp.get('defect_rate') or d1.get('s1_cp_defect_rate'))
+            if cp_def and cp_def > 0:
+                stage_factor = min(1.0, stage_num / 8.0)
+                interim_eff = min(100.0, (stage_factor * 100.0))
                 return round(interim_eff, 1)
 
-        # Check cp (current performance defect rate vs target)
-        cp = d1.get('current_performance') or d1.get('s1_current_performance') or {}
-        cp_def = parse_clean_float(cp.get('defect_rate') or d1.get('s1_cp_defect_rate'))
-        if cp_def and cp_def > 0:
-            stage_factor = min(1.0, stage_num / 8.0)
-            interim_eff = min(100.0, (stage_factor * 100.0))
-            return round(interim_eff, 1)
-
-    # 6. Fallback Workflow Milestone Execution Efficiency
-    # Progressive efficiency reflects the verified advancement across 8 standard QC stages
-    workflow_eff = (stage_num / 8.0) * 100.0
-    return round(min(100.0, max(10.0, workflow_eff)), 1)
+        # 6. Fallback Workflow Milestone Execution Efficiency
+        workflow_eff = (stage_num / 8.0) * 100.0
+        return round(min(100.0, max(10.0, workflow_eff)), 1)
+    except Exception:
+        try:
+            stage_num = max(1, min(8, int(project_current_stage or 1)))
+            return round((stage_num / 8.0) * 100.0, 1)
+        except Exception:
+            return 12.5
 
 
 # ============================
 # PROJECT REPOSITORY MASTER LIST
 # ============================
+def _safe_is_older_than(dt, cutoff):
+    if not dt or not cutoff:
+        return False
+    try:
+        if hasattr(dt, 'tzinfo') and dt.tzinfo is not None:
+            dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+        if hasattr(cutoff, 'tzinfo') and cutoff.tzinfo is not None:
+            cutoff = cutoff.astimezone(timezone.utc).replace(tzinfo=None)
+        return dt < cutoff
+    except Exception:
+        return False
+
+
+def _safe_format_iso(dt):
+    if not dt:
+        return None
+    try:
+        if hasattr(dt, 'tzinfo') and dt.tzinfo is not None:
+            return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        elif hasattr(dt, 'isoformat'):
+            iso_str = dt.isoformat()
+            return iso_str if (iso_str.endswith('Z') or '+' in iso_str) else iso_str + "Z"
+        return str(dt)
+    except Exception:
+        return str(dt)
+
+
 @repository_bp.route('/list', methods=['GET'])
 @jwt_required()
 def list_repository_projects():
     """Real-time project repository for all roles with stats and health metrics."""
-    user = db.session.get(User, get_jwt_identity())
-    if not user:
-        return jsonify({"msg": "User not found"}), 404
-        
-    # Filters
-    page = request.args.get('page', type=int)
-    per_page = request.args.get('per_page', default=10, type=int)
-    q = request.args.get('q', '').strip()
-    dept_id = request.args.get('department_id')
-    status = request.args.get('status')
-    stage = request.args.get('stage')
-    category = request.args.get('category')
-    plant_param = (request.args.get('plant') or request.args.get('plant_name') or request.args.get('plant_id') or '').strip()
-    
-    from app.infrastructure.database.models.models import ProjectMember, AuditLog, Plant, Department
-    query = Project.query.filter_by(org_id=user.org_id)
-    
-    # Enforce Role-Based Access Control for visibility
-    user_role_name = (user.role.name if user and user.role else '')
-    if user_role_name == 'Team Member':
-        query = query.filter(db.or_(
-            Project.members.any(id=user.id),
-            Project.creator_id == user.id,
-            Project.team_leader_id == user.id
-        ))
-    elif user_role_name == 'Team Leader':
-        # Team Leaders can see projects they lead, created, or are assigned to
-        query = query.filter(db.or_(
-            Project.team_leader_id == user.id,
-            Project.creator_id == user.id,
-            Project.members.any(id=user.id)
-        ))
-    elif user_role_name == 'Facilitator':
-        query = query.filter(Project.facilitator_id == user.id)
-    # Reviewers, Admins, CEOs, SuperAdmins can see all org projects
-
-    if plant_param:
-        if plant_param.isdigit():
-            plant_obj = Plant.query.filter_by(id=int(plant_param), org_id=user.org_id).first()
-            pname = plant_obj.name if plant_obj else None
-            if pname:
-                query = query.filter(db.or_(
-                    Project.plant.ilike(f"%{pname}%"),
-                    Project.department.has(Department.plant_id == int(plant_param))
-                ))
-            else:
-                query = query.filter(Project.department.has(Department.plant_id == int(plant_param)))
-        else:
-            query = query.filter(db.or_(
-                Project.plant.ilike(f"%{plant_param}%"),
-                Project.department.has(Department.plant.has(Plant.name.ilike(f"%{plant_param}%")))
-            ))
-
-    if dept_id and str(dept_id).isdigit():
-        query = query.filter_by(department_id=int(dept_id))
-
-    # Base query for all projects visible to this user in this org/plant/dept
-    scoped_base_query = query
-
-    # STRICT RULE: Closed / Completed / Archived projects belong in Knowledge Base ONLY.
-    # They MUST NEVER be visible in Project Repository.
-    closed_statuses = ['Closed', 'Completed', 'Archived', 'CLOSED', 'COMPLETED', 'ARCHIVED', 'Stage 8 Approved']
-    stopped_statuses = ['Rejected', 'Cancelled', 'Stopped', 'On Hold', 'Stage 1 Rejected']
-
-    def is_project_stopped(p):
-        if not p or not p.status:
-            return False
-        st = str(p.status).strip()
-        return st in stopped_statuses or st.startswith('Rejected') or st.startswith('Stopped')
-
-    # Activity & Inactivity cutoff (7-day standard across QCMS platform)
-    inactivity_days = 7
-    if user and hasattr(user, 'org_id') and user.org_id:
-        org = db.session.get(Organization, user.org_id)
-        if org and getattr(org, 'project_inactivity_days', None) and org.project_inactivity_days != 30:
-            inactivity_days = org.project_inactivity_days
+    try:
+        user = db.session.get(User, get_jwt_identity())
+        if not user:
+            return jsonify({"msg": "User not found"}), 404
             
-    today_utc = datetime.now(timezone.utc).date()
-    cutoff_datetime = datetime.combine(today_utc - timedelta(days=inactivity_days - 1), datetime.min.time())
-
-    # Calculate real-time repository summary stats for this user (before view filters like status/search/stage)
-    repo_base_projects = scoped_base_query.filter(~Project.status.in_(closed_statuses)).all()
-    base_pids = [p.id for p in repo_base_projects]
-    audit_map = {}
-    if base_pids:
-        audit_rows = db.session.query(
-            AuditLog.project_id,
-            db.func.max(AuditLog.created_at)
-        ).filter(AuditLog.project_id.in_(base_pids)).group_by(AuditLog.project_id).all()
-        audit_map = {row[0]: row[1] for row in audit_rows}
-
-    total_count = len(repo_base_projects)
-    stopped_count = 0
-    active_count = 0
-    stalled_count = 0
-
-    for p in repo_base_projects:
-        if is_project_stopped(p):
-            stopped_count += 1
-            continue
-        last_act = audit_map.get(p.id) or p.created_at
-        if last_act and last_act < cutoff_datetime:
-            stalled_count += 1
-        else:
-            active_count += 1
-
-    # Now apply table view filters (search query, stage, category, status)
-    table_query = scoped_base_query
-
-    if q:
-        q_term = f"%{q}%"
-        table_query = table_query.filter(db.or_(
-            Project.title.ilike(q_term),
-            Project.project_uid.ilike(q_term),
-            Project.category.ilike(q_term)
-        ))
-
-    if status and str(status).lower() != 'all':
-        if status == 'Active':
-            recent_active_pids = db.session.query(AuditLog.project_id).filter(
-                AuditLog.created_at >= cutoff_datetime,
-                AuditLog.project_id.isnot(None)
-            ).scalar_subquery()
-            table_query = table_query.filter(
-                ~Project.status.in_(closed_statuses + list(stopped_statuses)),
-                ~Project.status.ilike('Rejected%'),
-                ~Project.status.ilike('Stopped%'),
-                db.or_(
-                    Project.created_at >= cutoff_datetime,
-                    Project.id.in_(recent_active_pids)
-                )
-            )
-        elif status in ['Closed', 'Completed', 'Archived']:
-            table_query = table_query.filter(Project.status.in_(closed_statuses))
-        elif status in ['Inactive', 'Stalled']:
-            recent_active_pids = db.session.query(AuditLog.project_id).filter(
-                AuditLog.created_at >= cutoff_datetime,
-                AuditLog.project_id.isnot(None)
-            ).scalar_subquery()
-            table_query = table_query.filter(
-                ~Project.status.in_(closed_statuses + list(stopped_statuses)),
-                ~Project.status.ilike('Rejected%'),
-                ~Project.status.ilike('Stopped%'),
-                Project.created_at < cutoff_datetime,
-                ~Project.id.in_(recent_active_pids)
-            )
-        elif status in ['Stopped', 'Rejected', 'Cancelled']:
-            table_query = table_query.filter(db.or_(
-                Project.status.in_(list(stopped_statuses)),
-                Project.status.ilike('Rejected%'),
-                Project.status.ilike('Stopped%')
+        # Filters
+        page = request.args.get('page', type=int)
+        per_page = request.args.get('per_page', default=10, type=int)
+        q = request.args.get('q', '').strip()
+        dept_id = request.args.get('department_id')
+        status = request.args.get('status')
+        stage = request.args.get('stage')
+        category = request.args.get('category')
+        plant_param = (request.args.get('plant') or request.args.get('plant_name') or request.args.get('plant_id') or '').strip()
+        
+        from app.infrastructure.database.models.models import ProjectMember, AuditLog, Plant, Department
+        query = Project.query.filter_by(org_id=user.org_id)
+        
+        # Enforce Role-Based Access Control for visibility
+        user_role_name = (user.role.name if user and user.role else '')
+        if user_role_name == 'Team Member':
+            query = query.filter(db.or_(
+                Project.members.any(id=user.id),
+                Project.creator_id == user.id,
+                Project.team_leader_id == user.id
             ))
-        elif status == 'Pending Approval':
-            from app.infrastructure.database.models.models import (
-                ProjectStageTracker, ProjectReview,
-                Stage1ProblemDefinitionProjectInitiation,
-                Stage8StandardizationKnowledgeSharingProjectClosure
-            )
+        elif user_role_name == 'Team Leader':
+            # Team Leaders can see projects they lead, created, or are assigned to
+            query = query.filter(db.or_(
+                Project.team_leader_id == user.id,
+                Project.creator_id == user.id,
+                Project.members.any(id=user.id)
+            ))
+        elif user_role_name == 'Facilitator':
+            query = query.filter(Project.facilitator_id == user.id)
+        # Reviewers, Admins, CEOs, SuperAdmins can see all org projects
 
-            pending_tracker_statuses = [
-                'Submitted For Review', 'Pending Approval', 'Pending',
-                'Submitted', 'Awaiting Reviewer Approval', 'Under Review', 'Pending Review'
-            ]
-            pending_review_statuses = ['Pending', 'Under Review', 'Submitted']
-
-            pending_tracker_pids = db.session.query(ProjectStageTracker.project_id).filter(
-                ProjectStageTracker.status.in_(pending_tracker_statuses)
-            ).scalar_subquery()
-
-            pending_review_pids = db.session.query(ProjectReview.project_id).filter(
-                ProjectReview.status.in_(pending_review_statuses)
-            ).scalar_subquery()
-
-            stage1_pending_pids = db.session.query(Stage1ProblemDefinitionProjectInitiation.project_id).filter(
-                db.or_(
-                    Stage1ProblemDefinitionProjectInitiation.facilitator_approved.is_(False),
-                    Stage1ProblemDefinitionProjectInitiation.facilitator_approved.is_(None)
-                )
-            ).scalar_subquery()
-
-            stage8_pending_pids = db.session.query(Stage8StandardizationKnowledgeSharingProjectClosure.project_id).filter(
-                db.or_(
-                    Stage8StandardizationKnowledgeSharingProjectClosure.final_approval.is_(False),
-                    Stage8StandardizationKnowledgeSharingProjectClosure.final_approval.is_(None),
-                    Stage8StandardizationKnowledgeSharingProjectClosure.admin_closure.is_(False),
-                    Stage8StandardizationKnowledgeSharingProjectClosure.admin_closure.is_(None),
-                    Stage8StandardizationKnowledgeSharingProjectClosure.facilitator_validation.is_(False),
-                    Stage8StandardizationKnowledgeSharingProjectClosure.facilitator_validation.is_(None)
-                )
-            ).scalar_subquery()
-
-            table_query = table_query.filter(
-                ~Project.status.in_(closed_statuses),
-                db.or_(
-                    Project.status.ilike('%Pending%'),
-                    Project.status.ilike('%Submitted%'),
-                    Project.status.ilike('%Awaiting%'),
-                    Project.status.in_(['Stage 8 Submitted', 'Stage 8 Reviewer Approved', 'Pending Closure', 'SOP Created', 'Pending Review', 'Submitted', 'Awaiting Approval']),
-                    Project.id.in_(pending_tracker_pids),
-                    Project.id.in_(pending_review_pids),
-                    Project.id.in_(stage1_pending_pids),
-                    Project.id.in_(stage8_pending_pids)
-                )
-            )
-        else:
-            table_query = table_query.filter(Project.status == status)
-    else:
-        # STRICT DEFAULT: Exclude closed/completed/archived projects from Project Repository
-        table_query = table_query.filter(~Project.status.in_(closed_statuses))
-
-    if stage and str(stage).isdigit():
-        table_query = table_query.filter_by(current_stage=int(stage))
-
-    if category:
-        table_query = table_query.filter_by(category=category)
-        
-    total_items = table_query.count()
-    if page is not None:
-        per_page = max(1, min(per_page or 10, 100))
-        start = max(0, (page - 1) * per_page)
-        projects = table_query.order_by(Project.created_at.desc()).offset(start).limit(per_page).all()
-        total_pages = (total_items + per_page - 1) // per_page if total_items > 0 else 1
-    else:
-        projects = table_query.order_by(Project.created_at.desc()).all()
-        total_pages = 1
-        page = 1
-        per_page = total_items
-    
-    results = []
-    
-    from app.infrastructure.database.models.models import (
-        ProjectStageTracker, ProjectReview,
-        Stage1ProblemDefinitionProjectInitiation,
-        Stage8StandardizationKnowledgeSharingProjectClosure,
-        PlatformSettings
-    )
-
-    ps = PlatformSettings.query.first()
-    stage_weights = (ps and ps.stage_weightage_config) or None
-
-    for p in projects:
-        # Efficiency: calculate real-time KPI improvement % from all active workflow stages (Stage 7 & Stage 8)
-        efficiency = calculate_project_realtime_efficiency(p.id, p.current_stage)
-        
-        # Calculate weighted progress percentage
-        progress_pct = round(calculate_weighted_progress(p.current_stage, stage_weights), 1)
-        
-        # Detect stalled/inactive status based on activity cutoff
-        last_activity = audit_map.get(p.id)
-        if not last_activity:
-            last_log = AuditLog.query.filter_by(project_id=p.id).order_by(AuditLog.created_at.desc()).first()
-            last_activity = last_log.created_at if last_log else p.created_at
-        
-        is_stalled = False
-        if not is_project_stopped(p):
-            if last_activity and last_activity < cutoff_datetime:
-                is_stalled = True
-
-        display_status = p.status
-        if p.status not in ('Closed', 'Completed', 'Archived') and not is_project_stopped(p):
-            is_p_approval = False
-            if p.status and any(w in p.status for w in ['Pending', 'Submitted', 'Awaiting']):
-                is_p_approval = True
-            else:
-                tr = ProjectStageTracker.query.filter_by(project_id=p.id, stage_number=p.current_stage).first()
-                if tr and tr.status in ['Submitted For Review', 'Pending Approval', 'Pending', 'Submitted', 'Awaiting Reviewer Approval', 'Under Review', 'Pending Review']:
-                    is_p_approval = True
+        if plant_param:
+            if plant_param.isdigit():
+                plant_obj = Plant.query.filter_by(id=int(plant_param), org_id=user.org_id).first()
+                pname = plant_obj.name if plant_obj else None
+                if pname:
+                    query = query.filter(db.or_(
+                        Project.plant.ilike(f"%{pname}%"),
+                        Project.department.has(Department.plant_id == int(plant_param))
+                    ))
                 else:
-                    rev = ProjectReview.query.filter_by(project_id=p.id, status='Pending').first()
-                    if rev:
-                        is_p_approval = True
-                    elif p.current_stage == 1:
-                        s1 = Stage1ProblemDefinitionProjectInitiation.query.filter_by(project_id=p.id).first()
-                        if s1 and (s1.facilitator_approved is None or s1.facilitator_approved is False):
-                            is_p_approval = True
-                    elif p.current_stage == 8:
-                        s8 = Stage8StandardizationKnowledgeSharingProjectClosure.query.filter_by(project_id=p.id).first()
-                        if s8 and (s8.final_approval is None or s8.final_approval is False or s8.admin_closure is None or s8.admin_closure is False):
-                            is_p_approval = True
-
-            if is_p_approval:
-                display_status = 'Pending Approval'
-
-        formatted_updated = None
-        if last_activity:
-            if hasattr(last_activity, 'tzinfo') and last_activity.tzinfo is not None:
-                formatted_updated = last_activity.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-            elif hasattr(last_activity, 'isoformat'):
-                formatted_updated = last_activity.isoformat() + "Z"
+                    query = query.filter(Project.department.has(Department.plant_id == int(plant_param)))
             else:
-                formatted_updated = str(last_activity)
+                query = query.filter(db.or_(
+                    Project.plant.ilike(f"%{plant_param}%"),
+                    Project.department.has(Department.plant.has(Plant.name.ilike(f"%{plant_param}%")))
+                ))
 
-        tl_name = "N/A"
-        if p.team_leader:
-            tl_name = p.team_leader.full_name or p.team_leader.username or "N/A"
+        if dept_id and str(dept_id).isdigit():
+            query = query.filter_by(department_id=int(dept_id))
 
-        dept_name = "N/A"
-        if p.department:
-            dept_name = p.department.name or "N/A"
+        # Base query for all projects visible to this user in this org/plant/dept
+        scoped_base_query = query
 
-        results.append({
-            "id": p.id,
-            "project_uid": p.project_uid,
-            "title": p.title,
-            "category": p.category,
-            "department": dept_name,
-            "team_leader": tl_name,
-            "current_stage": p.current_stage,
-            "progress": progress_pct,
-            "progress_pct": progress_pct,
-            "efficiency": efficiency,
-            "status": display_status,
-            "is_stalled": is_stalled,
-            "last_updated": formatted_updated
-        })
+        # STRICT RULE: Closed / Completed / Archived projects belong in Knowledge Base ONLY.
+        # They MUST NEVER be visible in Project Repository.
+        closed_statuses = ['Closed', 'Completed', 'Archived', 'CLOSED', 'COMPLETED', 'ARCHIVED', 'Stage 8 Approved']
+        stopped_statuses = ['Rejected', 'Cancelled', 'Stopped', 'On Hold', 'Stage 1 Rejected']
 
-    return jsonify({
-        "stats": {
-            "total": total_count,
-            "active": active_count,
-            "stalled": stalled_count,
-            "stopped": stopped_count
-        },
-        "page": page,
-        "per_page": per_page,
-        "total": total_items,
-        "total_pages": total_pages,
-        "projects": results
-    }), 200
+        def is_project_stopped(p):
+            if not p or not p.status:
+                return False
+            st = str(p.status).strip()
+            return st in stopped_statuses or st.startswith('Rejected') or st.startswith('Stopped')
+
+        # Activity & Inactivity cutoff (7-day standard across QCMS platform)
+        inactivity_days = 7
+        if user and hasattr(user, 'org_id') and user.org_id:
+            org = db.session.get(Organization, user.org_id)
+            if org and getattr(org, 'project_inactivity_days', None) and org.project_inactivity_days != 30:
+                inactivity_days = org.project_inactivity_days
+                
+        today_utc = datetime.now(timezone.utc).date()
+        cutoff_datetime = datetime.combine(today_utc - timedelta(days=inactivity_days - 1), datetime.min.time())
+
+        # Calculate real-time repository summary stats for this user (before view filters like status/search/stage)
+        repo_base_projects = scoped_base_query.filter(~Project.status.in_(closed_statuses)).all()
+        base_pids = [p.id for p in repo_base_projects]
+        audit_map = {}
+        if base_pids:
+            try:
+                audit_rows = db.session.query(
+                    AuditLog.project_id,
+                    db.func.max(AuditLog.created_at)
+                ).filter(
+                    AuditLog.project_id.in_(base_pids)
+                ).group_by(AuditLog.project_id).all()
+                audit_map = {row[0]: row[1] for row in audit_rows}
+            except Exception:
+                audit_map = {}
+
+        total_count = len(repo_base_projects)
+        stopped_count = 0
+        active_count = 0
+        stalled_count = 0
+
+        for p in repo_base_projects:
+            if is_project_stopped(p):
+                stopped_count += 1
+                continue
+            last_act = audit_map.get(p.id) or p.created_at
+            if _safe_is_older_than(last_act, cutoff_datetime):
+                stalled_count += 1
+            else:
+                active_count += 1
+
+        # Now apply table view filters (search query, stage, category, status)
+        table_query = scoped_base_query
+
+        if q:
+            q_term = f"%{q}%"
+            table_query = table_query.filter(db.or_(
+                Project.title.ilike(q_term),
+                Project.project_uid.ilike(q_term),
+                Project.category.ilike(q_term)
+            ))
+
+        if status and str(status).lower() != 'all':
+            if status == 'Active':
+                recent_active_pids = db.session.query(AuditLog.project_id).filter(
+                    db.or_(AuditLog.org_id == user.org_id, AuditLog.org_id.is_(None)),
+                    AuditLog.created_at >= cutoff_datetime,
+                    AuditLog.project_id.isnot(None)
+                ).scalar_subquery()
+                table_query = table_query.filter(
+                    ~Project.status.in_(closed_statuses + list(stopped_statuses)),
+                    ~Project.status.ilike('Rejected%'),
+                    ~Project.status.ilike('Stopped%'),
+                    db.or_(
+                        Project.created_at >= cutoff_datetime,
+                        Project.id.in_(recent_active_pids)
+                    )
+                )
+            elif status in ['Closed', 'Completed', 'Archived']:
+                table_query = table_query.filter(Project.status.in_(closed_statuses))
+            elif status in ['Inactive', 'Stalled']:
+                recent_active_pids = db.session.query(AuditLog.project_id).filter(
+                    db.or_(AuditLog.org_id == user.org_id, AuditLog.org_id.is_(None)),
+                    AuditLog.created_at >= cutoff_datetime,
+                    AuditLog.project_id.isnot(None)
+                ).scalar_subquery()
+                table_query = table_query.filter(
+                    ~Project.status.in_(closed_statuses + list(stopped_statuses)),
+                    ~Project.status.ilike('Rejected%'),
+                    ~Project.status.ilike('Stopped%'),
+                    Project.created_at < cutoff_datetime,
+                    ~Project.id.in_(recent_active_pids)
+                )
+            elif status in ['Stopped', 'Rejected', 'Cancelled']:
+                table_query = table_query.filter(db.or_(
+                    Project.status.in_(list(stopped_statuses)),
+                    Project.status.ilike('Rejected%'),
+                    Project.status.ilike('Stopped%')
+                ))
+            elif status == 'Pending Approval':
+                from app.infrastructure.database.models.models import (
+                    ProjectStageTracker, ProjectReview,
+                    Stage1ProblemDefinitionProjectInitiation,
+                    Stage8StandardizationKnowledgeSharingProjectClosure
+                )
+
+                pending_tracker_statuses = [
+                    'Submitted For Review', 'Pending Approval', 'Pending',
+                    'Submitted', 'Awaiting Reviewer Approval', 'Under Review', 'Pending Review'
+                ]
+                pending_review_statuses = ['Pending', 'Under Review', 'Submitted']
+
+                pending_tracker_pids = db.session.query(ProjectStageTracker.project_id).filter(
+                    ProjectStageTracker.status.in_(pending_tracker_statuses)
+                ).scalar_subquery()
+
+                pending_review_pids = db.session.query(ProjectReview.project_id).filter(
+                    ProjectReview.status.in_(pending_review_statuses)
+                ).scalar_subquery()
+
+                stage1_pending_pids = db.session.query(Stage1ProblemDefinitionProjectInitiation.project_id).filter(
+                    db.or_(
+                        Stage1ProblemDefinitionProjectInitiation.facilitator_approved.is_(False),
+                        Stage1ProblemDefinitionProjectInitiation.facilitator_approved.is_(None)
+                    )
+                ).scalar_subquery()
+
+                stage8_pending_pids = db.session.query(Stage8StandardizationKnowledgeSharingProjectClosure.project_id).filter(
+                    db.or_(
+                        Stage8StandardizationKnowledgeSharingProjectClosure.final_approval.is_(False),
+                        Stage8StandardizationKnowledgeSharingProjectClosure.final_approval.is_(None),
+                        Stage8StandardizationKnowledgeSharingProjectClosure.admin_closure.is_(False),
+                        Stage8StandardizationKnowledgeSharingProjectClosure.admin_closure.is_(None),
+                        Stage8StandardizationKnowledgeSharingProjectClosure.facilitator_validation.is_(False),
+                        Stage8StandardizationKnowledgeSharingProjectClosure.facilitator_validation.is_(None)
+                    )
+                ).scalar_subquery()
+
+                table_query = table_query.filter(
+                    ~Project.status.in_(closed_statuses),
+                    db.or_(
+                        Project.status.ilike('%Pending%'),
+                        Project.status.ilike('%Submitted%'),
+                        Project.status.ilike('%Awaiting%'),
+                        Project.status.in_(['Stage 8 Submitted', 'Stage 8 Reviewer Approved', 'Pending Closure', 'SOP Created', 'Pending Review', 'Submitted', 'Awaiting Approval']),
+                        Project.id.in_(pending_tracker_pids),
+                        Project.id.in_(pending_review_pids),
+                        Project.id.in_(stage1_pending_pids),
+                        Project.id.in_(stage8_pending_pids)
+                    )
+                )
+            else:
+                table_query = table_query.filter(Project.status == status)
+        else:
+            # STRICT DEFAULT: Exclude closed/completed/archived projects from Project Repository
+            table_query = table_query.filter(~Project.status.in_(closed_statuses))
+
+        if stage and str(stage).isdigit():
+            table_query = table_query.filter_by(current_stage=int(stage))
+
+        if category:
+            table_query = table_query.filter_by(category=category)
+            
+        total_items = table_query.count()
+        if page is not None:
+            per_page = max(1, min(per_page or 10, 100))
+            start = max(0, (page - 1) * per_page)
+            projects = table_query.order_by(Project.created_at.desc()).offset(start).limit(per_page).all()
+            total_pages = (total_items + per_page - 1) // per_page if total_items > 0 else 1
+        else:
+            projects = table_query.order_by(Project.created_at.desc()).all()
+            total_pages = 1
+            page = 1
+            per_page = total_items
+        
+        results = []
+        
+        from app.infrastructure.database.models.models import (
+            ProjectStageTracker, ProjectReview,
+            Stage1ProblemDefinitionProjectInitiation,
+            Stage8StandardizationKnowledgeSharingProjectClosure,
+            PlatformSettings
+        )
+
+        ps = PlatformSettings.query.first()
+        stage_weights = (ps and ps.stage_weightage_config) or None
+
+        for p in projects:
+            try:
+                # Efficiency: calculate real-time KPI improvement % from all active workflow stages (Stage 7 & Stage 8)
+                efficiency = calculate_project_realtime_efficiency(p.id, p.current_stage)
+                
+                # Calculate weighted progress percentage
+                progress_pct = round(calculate_weighted_progress(p.current_stage, stage_weights), 1)
+                
+                # Detect stalled/inactive status based on activity cutoff
+                last_activity = audit_map.get(p.id)
+                if not last_activity:
+                    last_log = AuditLog.query.filter_by(project_id=p.id).order_by(AuditLog.created_at.desc()).first()
+                    last_activity = last_log.created_at if last_log else p.created_at
+                
+                is_stalled = False
+                if not is_project_stopped(p):
+                    if _safe_is_older_than(last_activity, cutoff_datetime):
+                        is_stalled = True
+
+                display_status = p.status or 'In Progress'
+                if p.status not in ('Closed', 'Completed', 'Archived') and not is_project_stopped(p):
+                    is_p_approval = False
+                    if p.status and any(w in p.status for w in ['Pending', 'Submitted', 'Awaiting']):
+                        is_p_approval = True
+                    else:
+                        try:
+                            tr = ProjectStageTracker.query.filter_by(project_id=p.id, stage_number=p.current_stage).first()
+                            if tr and tr.status in ['Submitted For Review', 'Pending Approval', 'Pending', 'Submitted', 'Awaiting Reviewer Approval', 'Under Review', 'Pending Review']:
+                                is_p_approval = True
+                            else:
+                                rev = ProjectReview.query.filter_by(project_id=p.id, status='Pending').first()
+                                if rev:
+                                    is_p_approval = True
+                                elif p.current_stage == 1:
+                                    s1 = Stage1ProblemDefinitionProjectInitiation.query.filter_by(project_id=p.id).first()
+                                    if s1 and (s1.facilitator_approved is None or s1.facilitator_approved is False):
+                                        is_p_approval = True
+                                elif p.current_stage == 8:
+                                    s8 = Stage8StandardizationKnowledgeSharingProjectClosure.query.filter_by(project_id=p.id).first()
+                                    if s8 and (s8.final_approval is None or s8.final_approval is False or s8.admin_closure is None or s8.admin_closure is False):
+                                        is_p_approval = True
+                        except Exception:
+                            pass
+
+                    if is_p_approval:
+                        display_status = 'Pending Approval'
+
+                formatted_updated = _safe_format_iso(last_activity)
+
+                tl_name = "N/A"
+                try:
+                    if p.team_leader:
+                        tl_name = p.team_leader.full_name or p.team_leader.username or "N/A"
+                except Exception:
+                    tl_name = "N/A"
+
+                dept_name = "N/A"
+                try:
+                    if p.department:
+                        dept_name = p.department.name or "N/A"
+                except Exception:
+                    dept_name = "N/A"
+
+                results.append({
+                    "id": p.id,
+                    "project_uid": p.project_uid or f"PRJ-{p.id}",
+                    "title": p.title or "Untitled Project",
+                    "category": p.category or "General",
+                    "department": dept_name,
+                    "team_leader": tl_name,
+                    "current_stage": p.current_stage or 1,
+                    "progress": progress_pct,
+                    "progress_pct": progress_pct,
+                    "efficiency": efficiency,
+                    "status": display_status,
+                    "is_stalled": is_stalled,
+                    "last_updated": formatted_updated
+                })
+            except Exception as p_err:
+                import traceback
+                traceback.print_exc()
+                results.append({
+                    "id": getattr(p, 'id', 0),
+                    "project_uid": getattr(p, 'project_uid', 'N/A'),
+                    "title": getattr(p, 'title', 'Project'),
+                    "category": getattr(p, 'category', 'General'),
+                    "department": "N/A",
+                    "team_leader": "N/A",
+                    "current_stage": getattr(p, 'current_stage', 1) or 1,
+                    "progress": 0.0,
+                    "progress_pct": 0.0,
+                    "efficiency": 0.0,
+                    "status": getattr(p, 'status', 'In Progress') or 'In Progress',
+                    "is_stalled": False,
+                    "last_updated": None
+                })
+
+        return jsonify({
+            "stats": {
+                "total": total_count,
+                "active": active_count,
+                "stalled": stalled_count,
+                "stopped": stopped_count
+            },
+            "page": page,
+            "per_page": per_page,
+            "total": total_items,
+            "total_pages": total_pages,
+            "projects": results
+        }), 200
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        from flask import current_app
+        current_app.logger.error(f"[Repository] list_repository_projects critical error: {e}")
+        return jsonify({
+            "stats": {
+                "total": 0,
+                "active": 0,
+                "stalled": 0,
+                "stopped": 0
+            },
+            "page": page or 1,
+            "per_page": per_page or 10,
+            "total": 0,
+            "total_pages": 1,
+            "projects": []
+        }), 200
 
 def sanitize_num(val):
     if val is None:
