@@ -2301,7 +2301,7 @@ def get_enterprise_dashboard():
 
         def get_mrr(s_dt, e_dt):
             q = Subscription.query.filter(
-                Subscription.subscription_status.in_(['Active', 'Trialing', 'Trial', 'ACTIVE']),
+                Subscription.subscription_status.in_(['Active', 'ACTIVE']),
                 Subscription.created_at <= e_dt
             )
             if f['org_id']:
