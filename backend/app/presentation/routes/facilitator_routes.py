@@ -321,7 +321,7 @@ def get_impact_review():
             "final": final_data,
             "kpi_improvement_pct": kpi_pct or 0,
             "results_data": results_data,
-            "kpi_target": s7.action_plan if (s7 and s7.action_plan) else {},
+            "kpi_target": getattr(s7, 'action_plan', None) or {} if s7 else {},
             "cost_savings": cost_savings,
             "status": p.status,
             "impact_status": impact.status if impact else "Pending",

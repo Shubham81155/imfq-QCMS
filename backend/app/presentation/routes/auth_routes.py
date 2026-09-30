@@ -1338,6 +1338,289 @@ def _create_login_session_and_response(user, remember_me=False):
     return resp, 200
 
 
+def _find_user_by_identifier(identifier):
+    """
+    Find user by email, phone (with/without country code), username, or custom field login options.
+    """
+    if not identifier:
+        return None
+    from sqlalchemy import func, or_
+    import re
+    identifier = identifier.strip()
+    clean_digits = re.sub(r'\D', '', identifier)
+
+    # 1. Email check
+    if '@' in identifier:
+        user = User.query.filter(func.lower(User.email) == identifier.lower()).first()
+        if user:
+            return user
+
+    # 2. Phone check (supports last 10 digits, +91 prefix, etc.)
+    if clean_digits and len(clean_digits) >= 10:
+        last_10 = clean_digits[-10:]
+        user = User.query.filter(
+            or_(
+                User.phone == identifier,
+                User.phone == f"+91{last_10}",
+                User.phone == last_10,
+                User.phone.like(f"%{last_10}")
+            )
+        ).first()
+        if user:
+            return user
+
+    # 3. Direct match on username, email or phone
+    user = User.query.filter(
+        or_(
+            func.lower(User.username) == identifier.lower(),
+            func.lower(User.email) == identifier.lower(),
+            User.phone == identifier
+        )
+    ).first()
+    if user:
+        return user
+
+    # 4. Custom field login options across organizations
+    try:
+        from app.infrastructure.database.models.models import Organization
+        from sqlalchemy import text
+        all_orgs_with_custom_login = Organization.query.filter(
+            Organization.login_options.isnot(None)
+        ).all()
+        checked_keys = set()
+        for org in all_orgs_with_custom_login:
+            options = org.login_options or []
+            for key in options:
+                if key in ('email', 'username', 'phone') or key in checked_keys:
+                    continue
+                checked_keys.add(key)
+                try:
+                    result = db.session.execute(
+                        text("SELECT id FROM users WHERE LOWER(custom_fields ->> :key) = LOWER(:val) LIMIT 1"),
+                        {"key": key, "val": identifier}
+                    ).fetchone()
+                    if result:
+                        return db.session.get(User, result[0])
+                except Exception:
+                    continue
+    except Exception:
+        pass
+
+    return None
+
+
+@auth_bp.route('/lookup-identifier', methods=['POST'])
+def lookup_identifier():
+    """
+    Check if an email, phone number, or username is registered.
+    - If user not found -> 404 {"status": "error", "message": "User not found"}
+    - If account deactivated -> 403 {"status": "error", "message": "This account is currently deactivated."}
+    - If first-time user (is_temp_password is True or no hashed_password):
+        Dispatches OTP to email/phone and returns flow: "first_time_otp"
+    - If returning active user:
+        Returns flow: "password"
+    """
+    data = request.get_json() or {}
+    identifier = (data.get('identifier') or data.get('username') or data.get('email') or data.get('phone') or '').strip()
+
+    if not identifier:
+        return jsonify({
+            "status": "error",
+            "message": "Please enter your Email Address or Phone Number.",
+            "msg": "Please enter your Email Address or Phone Number."
+        }), 400
+
+    user = _find_user_by_identifier(identifier)
+    if not user:
+        return jsonify({
+            "status": "error",
+            "message": "User not found",
+            "msg": "User not found"
+        }), 404
+
+    if not user.is_active:
+        return jsonify({
+            "status": "error",
+            "message": "This account is currently deactivated. Please contact your organization administrator.",
+            "msg": "This account is currently deactivated. Please contact your organization administrator."
+        }), 403
+
+    # Check lockout
+    try:
+        from app.presentation.middleware.security import get_lockout_info
+        id_info = get_lockout_info(identifier)
+        if id_info.get('is_locked'):
+            return jsonify({
+                "status": "error",
+                "message": "Account is temporarily locked due to too many failed attempts.",
+                "msg": "Account is temporarily locked due to too many failed attempts.",
+                "error_code": "ACCOUNT_LOCKED",
+                "remaining_seconds": id_info.get('remaining_seconds', 900)
+            }), 429
+    except Exception:
+        pass
+
+    # Check first-time status: temp password or missing hashed password
+    is_first_time = bool(user.is_temp_password or not user.hashed_password)
+
+    # Determine channel and masked destination
+    import re
+    clean_digits = re.sub(r'\D', '', identifier)
+    if '@' in identifier:
+        channel = "email"
+    elif clean_digits and len(clean_digits) >= 10:
+        channel = "phone"
+    else:
+        channel = "email" if user.email else "phone"
+
+    masked_destination = ""
+    if channel == "email" or (user.email and not user.phone):
+        masked_destination = _mask_email(user.email)
+        channel = "email"
+    else:
+        masked_destination = _mask_phone(user.phone)
+        channel = "phone"
+
+    if is_first_time:
+        # Generate 6-digit cryptographically secure OTP
+        otp = f"{secrets.randbelow(1_000_000):06d}"
+        user.otp_token = otp
+        user.otp_expiry = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=10)
+        db.session.add(user)
+        db.session.commit()
+
+        # Send OTP
+        if channel == "email":
+            try:
+                EmailUtils.send_login_otp_email(user, otp, is_async=True)
+            except Exception as ex:
+                print(f"[AUTH First-Time OTP] Email send error: {ex}")
+            dest_msg = f"Verification code sent to your registered email ({masked_destination})."
+        else:
+            try:
+                dispatch_phone_otp_sms(user.phone, otp, template_key='phone_otp_verification', user=user, is_async=True)
+            except Exception as ex:
+                print(f"[AUTH First-Time OTP] SMS send error: {ex}")
+            dest_msg = f"Verification code sent to your registered phone ({masked_destination})."
+
+        return jsonify({
+            "status": "success",
+            "flow": "first_time_otp",
+            "channel": channel,
+            "masked_destination": masked_destination,
+            "message": dest_msg,
+            "msg": dest_msg,
+            "expires_in": 600
+        }), 200
+    else:
+        return jsonify({
+            "status": "success",
+            "flow": "password",
+            "channel": channel,
+            "masked_destination": masked_destination,
+            "message": "User verified. Please enter your password.",
+            "msg": "User verified. Please enter your password."
+        }), 200
+
+
+@auth_bp.route('/verify-first-time-otp', methods=['POST'])
+def verify_first_time_otp():
+    """
+    Verify the first-time onboarding OTP code.
+    Upon successful verification:
+    - Clears the OTP
+    - Issues a 30-minute password reset token
+    - Returns redirect_url to /auth/reset-password.html?token={token}&first_time=1
+    """
+    data = request.get_json() or {}
+    identifier = (data.get('identifier') or data.get('username') or data.get('email') or data.get('phone') or '').strip()
+    otp = str(data.get('otp') or '').strip()
+
+    if not identifier or not otp:
+        return jsonify({
+            "status": "error",
+            "message": "Identifier and 6-digit OTP verification code are required.",
+            "msg": "Identifier and 6-digit OTP verification code are required."
+        }), 400
+
+    user = _find_user_by_identifier(identifier)
+    if not user:
+        return jsonify({
+            "status": "error",
+            "message": "User not found",
+            "msg": "User not found"
+        }), 404
+
+    if not user.is_active:
+        return jsonify({
+            "status": "error",
+            "message": "This account is currently deactivated.",
+            "msg": "This account is currently deactivated."
+        }), 403
+
+    fails_key = f"otp_fails:first_time:{user.id}"
+    try:
+        from app.infrastructure.cache.redis_adapter import cache
+        fails = int(cache.get(fails_key) or 0)
+        if fails >= 5:
+            return jsonify({
+                "status": "error",
+                "message": "Too many failed attempts. This code has been invalidated. Please request a new code.",
+                "msg": "Too many failed attempts. This code has been invalidated. Please request a new code.",
+                "code": "OTP_ATTEMPTS_EXCEEDED"
+            }), 429
+    except Exception:
+        fails_key = None
+        fails = 0
+
+    if not user.otp_token or user.otp_token != otp:
+        if fails_key:
+            try:
+                from app.infrastructure.cache.redis_adapter import cache
+                cache.setex(fails_key, 600, str(fails + 1))
+            except Exception:
+                pass
+        return jsonify({
+            "status": "error",
+            "message": "Invalid verification code. Please check and try again.",
+            "msg": "Invalid verification code. Please check and try again."
+        }), 400
+
+    if not user.otp_expiry or _to_naive_utc(user.otp_expiry) < datetime.now(timezone.utc).replace(tzinfo=None):
+        return jsonify({
+            "status": "error",
+            "message": "Verification code has expired. Please request a new code.",
+            "msg": "Verification code has expired. Please request a new code."
+        }), 400
+
+    # Invalidate OTP immediately
+    user.otp_token = None
+    user.otp_expiry = None
+
+    # Generate secure reset token for password setup
+    reset_token = secrets.token_urlsafe(32)
+    user.reset_token = reset_token
+    user.token_expiry = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=30)
+    db.session.add(user)
+    db.session.commit()
+
+    if fails_key:
+        try:
+            from app.infrastructure.cache.redis_adapter import cache
+            cache.delete(fails_key)
+            cache.delete(f"otp_cooldown:first_time:{user.id}")
+        except Exception:
+            pass
+
+    return jsonify({
+        "status": "success",
+        "message": "Verification code verified successfully. Please create your password.",
+        "msg": "Verification code verified successfully. Please create your password.",
+        "reset_token": reset_token,
+        "redirect_url": f"/auth/reset-password.html?token={reset_token}&first_time=1"
+    }), 200
+
+
 @auth_bp.route('/login-otp/send', methods=['POST'])
 def send_login_otp():
     """
@@ -1352,48 +1635,21 @@ def send_login_otp():
     if not identifier:
         return jsonify({"status": "error", "msg": "Please enter your Email Address or Phone Number."}), 400
 
-    from sqlalchemy import func, or_
-    clean_digits = re.sub(r'\D', '', identifier)
-    user = None
-    channel = None
+    user = _find_user_by_identifier(identifier)
+    if not user:
+        return jsonify({
+            "status": "error",
+            "msg": "User not found",
+            "message": "User not found"
+        }), 404
 
+    clean_digits = re.sub(r'\D', '', identifier)
     if '@' in identifier:
         channel = "email"
-        user = User.query.filter(func.lower(User.email) == identifier.lower()).first()
-        if not user:
-            return jsonify({
-                "status": "error",
-                "msg": "Please enter a valid registered email address. No account found.",
-                "message": "Please enter a valid registered email address. No account found."
-            }), 404
     elif clean_digits and len(clean_digits) >= 10:
         channel = "phone"
-        last_10 = clean_digits[-10:]
-        user = User.query.filter(
-            or_(
-                User.phone == identifier,
-                User.phone == f"+91{last_10}",
-                User.phone == last_10,
-                User.phone.like(f"%{last_10}")
-            )
-        ).first()
-        if not user:
-            return jsonify({
-                "status": "error",
-                "msg": "Please enter a valid registered phone number. No account found.",
-                "message": "Please enter a valid registered phone number. No account found."
-            }), 404
     else:
-        # Check by username if entered
-        user = User.query.filter(func.lower(User.username) == identifier.lower()).first()
-        if user:
-            channel = "email" if user.email else "phone"
-        if not user:
-            return jsonify({
-                "status": "error",
-                "msg": "Please enter a valid registered email address or 10-digit phone number.",
-                "message": "Please enter a valid registered email address or 10-digit phone number."
-            }), 404
+        channel = "email" if user.email else "phone"
 
     if not user.is_active:
         return jsonify({
@@ -1483,30 +1739,7 @@ def verify_login_otp():
     if not identifier or not otp:
         return jsonify({"status": "error", "msg": "Identifier and 6-digit OTP verification code are required."}), 400
 
-    from sqlalchemy import func, or_
-    clean_digits = re.sub(r'\D', '', identifier)
-    user = None
-
-    if '@' in identifier:
-        user = User.query.filter(func.lower(User.email) == identifier.lower()).first()
-    elif clean_digits and len(clean_digits) >= 10:
-        last_10 = clean_digits[-10:]
-        user = User.query.filter(
-            or_(
-                User.phone == identifier,
-                User.phone == f"+91{last_10}",
-                User.phone == last_10,
-                User.phone.like(f"%{last_10}")
-            )
-        ).first()
-    else:
-        user = User.query.filter(
-            or_(
-                func.lower(User.username) == identifier.lower(),
-                func.lower(User.email) == identifier.lower()
-            )
-        ).first()
-
+    user = _find_user_by_identifier(identifier)
     if not user:
         return jsonify({"status": "error", "msg": "User account not found."}), 404
 

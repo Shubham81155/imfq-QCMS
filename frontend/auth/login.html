@@ -3,14 +3,14 @@
 
 <head>
     <!-- Performance & Network Acceleration: Critical Preloads -->
-    <link rel="preload" href="/assets/dist/core.1a087e1b.min.css" as="style">
+    <link rel="preload" href="/assets/dist/core.83f8d7cf.min.css" as="style">
     <link rel="preload" href="/assets/dist/auth-guard.bb0c9864.min.js" as="script">
     <script src="/assets/dist/auth-guard.bb0c9864.min.js"></script>
 
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login | OctaQube Enterprise</title>
-    <link rel="stylesheet" href="/assets/dist/core.1a087e1b.min.css">
+    <link rel="stylesheet" href="/assets/dist/core.83f8d7cf.min.css">
     <script src="/assets/dist/lucide.min.js"></script>
     <style>
         body {
@@ -229,8 +229,8 @@
 
         <!-- Right: Form -->
         <div class="login-form-section">
-            <h2>Welcome back</h2>
-            <p class="subtitle" id="loginFormSubtitle">Sign in to your <span id="loginAccountShortName">OctaQube</span> account</p>
+            <h2 id="loginFormHeading">Welcome back</h2>
+            <p class="subtitle" id="loginFormSubtitle">Enter your registered Email ID or Phone Number to continue</p>
 
             <div id="errorMsg" class="ds-toast error mb-4"
                 style="display:none !important; width: 100%; min-width: auto; animation: none;">
@@ -243,34 +243,101 @@
                 <span></span>
             </div>
 
-            <form id="loginForm" action="javascript:void(0);" onsubmit="return false;" autocomplete="on">
-                <div class="ds-field" id="identifierFieldContainer">
-                    <label class="ds-label" id="identifierLabel"><i data-lucide="mail"></i> <span id="identifierLabelText">Email ID</span> <span class="text-danger">*</span></label>
-                    <input type="text" class="ds-input" id="username"
-                        placeholder="Enter your Email ID" required autocomplete="username"
-                        autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="email">
-                </div>
-                <div class="ds-field" id="passwordFieldContainer">
-                    <label class="ds-label"><i data-lucide="lock"></i> Password <span class="text-danger">*</span></label>
-                    <div style="position: relative;">
-                        <input type="password" class="ds-input" id="password" placeholder="**********" required
-                            autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" style="padding-right: 40px;">
-                        <button type="button" id="togglePasswordBtn" onclick="togglePassword('password', this)"
-                            style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); background: none; border: none; padding: 0; color: var(--ds-text-secondary); display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 5;" title="Show / Hide Password" aria-label="Toggle Password Visibility">
-                            <i data-lucide="eye" style="width: 18px; height: 18px;"></i>
-                        </button>
+            <!-- STEP 1: IDENTIFIER ONLY (Shown by default) -->
+            <div id="stepIdentifier">
+                <form id="identifierForm" onsubmit="window.handleProceedClick(); return false;" autocomplete="on">
+                    <div class="ds-field" id="identifierFieldContainer">
+                        <label class="ds-label" id="identifierLabel"><i data-lucide="mail"></i> <span id="identifierLabelText">Email ID or Phone Number</span> <span class="text-danger">*</span></label>
+                        <input type="text" class="ds-input" id="username"
+                            placeholder="Enter your Email ID or Phone Number" required autocomplete="username"
+                            autocapitalize="none" autocorrect="off" spellcheck="false" autofocus>
                     </div>
+
+                    <button type="submit" class="ds-btn ds-btn-primary w-100 ds-btn-lg" id="btnProceed">
+                        Proceed <i data-lucide="arrow-right" style="width: 18px; height: 18px; margin-left: 6px;"></i>
+                    </button>
+                </form>
+            </div>
+
+            <!-- STEP 2: PASSWORD STEP (For returning users with existing password) -->
+            <div id="stepPassword" style="display: none;">
+                <div class="user-badge-container" style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: rgba(var(--ds-accent-rgb), 0.08); border: 1px solid rgba(var(--ds-accent-rgb), 0.2); border-radius: 10px; margin-bottom: var(--ds-space-6);">
+                    <div style="display: flex; align-items: center; gap: 8px; overflow: hidden;">
+                        <i data-lucide="user-check" style="width: 16px; height: 16px; color: var(--ds-accent); flex-shrink: 0;"></i>
+                        <span id="displayIdentifierPwd" style="font-weight: 600; font-size: 0.875rem; color: var(--ds-text-main); text-overflow: ellipsis; overflow: hidden; white-space: nowrap;"></span>
+                    </div>
+                    <button type="button" onclick="window.goToIdentifierStep()" style="background: none; border: none; color: var(--ds-accent); font-size: 0.8125rem; font-weight: 700; cursor: pointer; padding: 0 4px; text-decoration: underline;">Change</button>
                 </div>
 
-                <div class="login-options" id="loginOptionsContainer">
-                    <a href="login-otp.html" class="forgot-password" id="linkSignInWithOtp">Sign in with OTP</a>
+                <form id="passwordForm" onsubmit="window.handlePasswordSubmit(); return false;" autocomplete="on">
+                    <div class="ds-field" id="passwordFieldContainer">
+                        <label class="ds-label"><i data-lucide="lock"></i> Password <span class="text-danger">*</span></label>
+                        <div style="position: relative;">
+                            <input type="password" class="ds-input" id="password" placeholder="Enter your password" required
+                                autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" style="padding-right: 40px;">
+                            <button type="button" id="togglePasswordBtn" onclick="togglePassword('password', this)"
+                                style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); background: none; border: none; padding: 0; color: var(--ds-text-secondary); display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 5;" title="Show / Hide Password" aria-label="Toggle Password Visibility">
+                                <i data-lucide="eye" style="width: 18px; height: 18px;"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="ds-btn ds-btn-primary w-100 ds-btn-lg" id="loginBtn">
+                        Sign In
+                    </button>
+                </form>
+
+                <div class="login-options" id="loginOptionsContainer" style="display: flex; justify-content: space-between; align-items: center; margin-top: var(--ds-space-6); font-size: 0.8125rem;">
+                    <a href="javascript:void(0);" class="forgot-password" id="linkSignInWithOtp" onclick="window.handleSignInWithOtpClick()" style="color: var(--ds-accent); font-weight: 600; display: inline-flex; align-items: center; gap: 4px;">
+                        <i data-lucide="smartphone" style="width: 14px; height: 14px;"></i> Sign in with OTP
+                    </a>
                     <a href="forgot-password.html" class="forgot-password" id="linkForgotPassword">Forgot password?</a>
                 </div>
+            </div>
 
-                <button type="submit" class="ds-btn ds-btn-primary w-100 ds-btn-lg" id="loginBtn">
-                    Sign In
-                </button>
-            </form>
+            <!-- STEP 3: OTP STEP (First-time onboarding OR returning OTP login) -->
+            <div id="stepOtp" style="display: none;">
+                <div class="user-badge-container" style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: rgba(var(--ds-accent-rgb), 0.08); border: 1px solid rgba(var(--ds-accent-rgb), 0.2); border-radius: 10px; margin-bottom: var(--ds-space-6);">
+                    <div style="display: flex; align-items: center; gap: 8px; overflow: hidden;">
+                        <i data-lucide="shield-check" style="width: 16px; height: 16px; color: var(--ds-accent); flex-shrink: 0;"></i>
+                        <span id="displayIdentifierOtp" style="font-weight: 600; font-size: 0.875rem; color: var(--ds-text-main); text-overflow: ellipsis; overflow: hidden; white-space: nowrap;"></span>
+                    </div>
+                    <button type="button" onclick="window.goToIdentifierStep()" style="background: none; border: none; color: var(--ds-accent); font-size: 0.8125rem; font-weight: 700; cursor: pointer; padding: 0 4px; text-decoration: underline;">Change</button>
+                </div>
+
+                <form id="otpForm" onsubmit="window.handleOtpSubmit(); return false;">
+                    <div class="ds-field" id="otpCodeFieldContainer">
+                        <label class="ds-label"><i data-lucide="key-round"></i> 6-Digit Verification Code <span class="text-danger">*</span></label>
+                        <input type="text" class="ds-input text-center fw-bold" id="loginOtpInput"
+                            placeholder="••••••" maxlength="6" inputmode="numeric" pattern="[0-9]*"
+                            style="font-size: 1.5rem; letter-spacing: 0.4em; padding-left: 0.4em;" autocomplete="one-time-code">
+                        <div class="form-text mt-2 text-muted" id="otpDestinationHint" style="font-size: 0.8125rem;">
+                            Enter the 6-digit verification code dispatched to your registered destination.
+                        </div>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center mb-4" style="font-size: 0.8125rem;">
+                        <span id="otpCountdownText" class="text-muted">
+                            Resend code in <strong id="otpTimerSec" style="color: var(--ds-accent);">60</strong>s
+                        </span>
+                        <button type="button" id="btnResendOtp" class="btn btn-link p-0 text-decoration-none"
+                            style="display:none; color: var(--ds-accent); font-weight: 600; font-size: 0.8125rem; background:none; border:none; cursor:pointer;"
+                            onclick="window.resendOtp()">
+                            Resend Code
+                        </button>
+                    </div>
+
+                    <button type="submit" class="ds-btn ds-btn-primary w-100 ds-btn-lg mb-3" id="btnVerifyOtp">
+                        Verify &amp; Continue
+                    </button>
+                </form>
+
+                <div class="text-center" id="otpBackContainer" style="margin-top: var(--ds-space-4);">
+                    <a href="javascript:void(0);" id="linkBackToPassword" onclick="window.goToPasswordStep()" style="color: var(--ds-text-secondary); font-size: 0.8125rem; text-decoration: none;">
+                        &larr; Sign in with password instead
+                    </a>
+                </div>
+            </div>
 
             <div id="ssoSection" style="display:none; margin-top: var(--ds-space-6);">
                 <div class="text-center text-xxs text-secondary text-uppercase fw-bold mb-3" style="letter-spacing: 0.05em; display: flex; align-items: center; justify-content: center; gap: 10px;">

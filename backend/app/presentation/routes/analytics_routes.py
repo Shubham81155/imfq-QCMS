@@ -2159,8 +2159,10 @@ def parse_filters(user):
         start_date = datetime(now.year, q_month, 1)
     elif date_range in ('Year', 'Year to Date', 'YTD'):
         start_date = datetime(now.year, 1, 1)
-    elif date_range in ('Last 12 Months', '12m', '1y', 'ALL', 'All Time'):
+    elif date_range in ('Last 12 Months', '12m', '1y'):
         start_date = now - timedelta(days=365)
+    elif date_range in ('ALL', 'All Time', 'all_time', 'all'):
+        start_date = datetime(2020, 1, 1)
     elif date_range == 'Custom Range':
         start_str = request.args.get('start_date')
         end_str = request.args.get('end_date')
@@ -2436,7 +2438,7 @@ def get_enterprise_dashboard():
             uptime = "95.00%"
 
         kpis = {
-            "total_revenue":        {"value": round(rev_curr, 2), "growth": rev_growth,    "icon": "dollar-sign",  "tooltip": "Total completed revenue in period"},
+            "total_revenue":        {"value": round(rev_curr, 2), "all_time": round(engine_kpis.get("all_time_revenue", rev_curr), 2), "growth": rev_growth,    "icon": "dollar-sign",  "tooltip": "Total gross cumulative financial revenue earned across all subscriptions & plans"},
             "mrr":                  {"value": round(mrr_curr, 2), "growth": mrr_growth,    "icon": "repeat",       "tooltip": "Monthly Recurring Revenue"},
             "arr":                  {"value": round(arr_curr, 2), "growth": arr_growth,    "icon": "trending-up",  "tooltip": "Annualized Recurring Revenue"},
             "total_orgs":           {"value": t_orgs,             "growth": orgs_growth,   "icon": "building",     "tooltip": "Total registered organizations"},
@@ -2509,6 +2511,8 @@ def get_revenue_analytics():
         "mrr": kpis["mrr"],
         "arr": kpis["arr"],
         "total_revenue": kpis["total_revenue"],
+        "all_time_revenue": kpis.get("all_time_revenue", kpis["total_revenue"]),
+        "period_revenue": kpis.get("period_revenue", kpis["total_revenue"]),
         "arpo": arpo,
         "upgrades": kpis["upgrades"],
         "renewals": kpis["renewals"]
@@ -3183,34 +3187,8 @@ def export_analytics():
 # NEW: Drill-Down API
 # ─────────────────────────────────────────────────────────────────────────────
 def _extract_invoice_amount(inv):
-    if not inv:
-        return 0.0
-    tot = float(inv.total_amount or 0.0)
-    if tot > 0:
-        return tot
-    base = float(inv.base_amount or 0.0)
-    gst = float(inv.gst_amount or 0.0)
-    disc = float(inv.discount_amount or 0.0)
-    calc_tot = base + gst - disc
-    if calc_tot > 0:
-        return calc_tot
-    if base > 0:
-        return base
-    if inv.usage_breakdown and isinstance(inv.usage_breakdown, dict):
-        brk_tot = float(inv.usage_breakdown.get('total_amount') or inv.usage_breakdown.get('subtotal_amount') or 0.0)
-        if brk_tot > 0:
-            return brk_tot
-    if getattr(inv, 'payment', None):
-        pay_tot = float(inv.payment.final_amount or inv.payment.amount or 0.0)
-        if pay_tot > 0:
-            return pay_tot
-    if getattr(inv, 'payment_id', None):
-        pmt = db.session.get(SubscriptionPayment, inv.payment_id)
-        if pmt:
-            pay_tot = float(pmt.final_amount or pmt.amount or 0.0)
-            if pay_tot > 0:
-                return pay_tot
-    return 0.0
+    from app.domain.services.financial_metrics_engine import FinancialMetricsEngine
+    return FinancialMetricsEngine.extract_invoice_amount(inv)
 
 
 def _get_plan_unit_price(s, org_id, plan_name):
@@ -3295,7 +3273,6 @@ def drill_down():
             if not subs:
                 plan_name = o.subscription_plan or 'Starter'
                 sub_uid = f"SUB-{o.id:04d}"
-                unit_price = _get_plan_unit_price(None, o.id, plan_name)
 
                 accounted_pay_ids = set()
                 total_paid = 0.0
@@ -3308,26 +3285,14 @@ def drill_down():
                         chosen = max(inv_amt, p_amt)
                     else:
                         chosen = inv_amt
-                    if chosen <= 0.0 and unit_price > 0:
-                        chosen = unit_price
                     total_paid += chosen
 
                 for p in paid_payments:
                     if p.id not in accounted_pay_ids:
                         p_amt = float(p.final_amount or p.amount or 0.0)
-                        if p_amt <= 0.0 and unit_price > 0:
-                            p_amt = unit_price
                         total_paid += p_amt
 
                 invoice_count = len(paid_invoices) + len([p for p in paid_payments if p.id not in accounted_pay_ids])
-
-                if invoice_count > 0 and total_paid == 0.0 and unit_price > 0:
-                    total_paid = invoice_count * unit_price
-                elif invoice_count == 0 and total_paid > 0:
-                    invoice_count = 1
-                elif invoice_count == 0 and total_paid == 0.0 and unit_price > 0 and plan_name.lower() not in ('trial', 'trialing', 'default trial plan', ''):
-                    total_paid = unit_price
-                    invoice_count = 1
 
                 drill_data.append({
                     "organization": o.name,
@@ -3342,7 +3307,6 @@ def drill_down():
                     sub_payments = [p for p in paid_payments if p.subscription_id == s.id or (p.subscription_id is None and idx == 0)]
 
                     p_name = (s.plan_name or o.subscription_plan or 'Starter').strip()
-                    unit_price = _get_plan_unit_price(s, o.id, p_name)
 
                     accounted_pay_ids = set()
                     s_total = 0.0
@@ -3356,26 +3320,14 @@ def drill_down():
                             chosen = max(inv_amt, p_amt)
                         else:
                             chosen = inv_amt
-                        if chosen <= 0.0 and unit_price > 0:
-                            chosen = unit_price
                         s_total += chosen
 
                     for p in sub_payments:
                         if p.id not in accounted_pay_ids:
                             p_amt = float(p.final_amount or p.amount or 0.0)
-                            if p_amt <= 0.0 and unit_price > 0:
-                                p_amt = unit_price
                             s_total += p_amt
 
                     s_count = len(sub_invoices) + len([p for p in sub_payments if p.id not in accounted_pay_ids])
-
-                    if s_count > 0 and s_total == 0.0 and unit_price > 0:
-                        s_total = s_count * unit_price
-                    elif s_count == 0 and s_total > 0:
-                        s_count = 1
-                    elif s_count == 0 and s_total == 0.0 and unit_price > 0 and p_name.lower() not in ('trial', 'trialing', 'default trial plan', ''):
-                        s_total = unit_price
-                        s_count = 1
 
                     drill_data.append({
                         "organization": o.name,

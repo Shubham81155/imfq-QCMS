@@ -117,13 +117,15 @@ def get_stats():
         
     # Stage 8 impact projects (pending impact review - matches impact-projects list)
     try:
-        pending_impact = len(_get_impact_projects_list(user, is_admin))
+        impact_projects = _get_impact_projects_list(user, is_admin)
+        pending_impact = len([p for p in impact_projects if not p.get('approved')])
     except Exception:
         pending_impact = 0
 
     # Stage 8 closure projects (matches closure-projects list)
     try:
-        pending_closure = len(_get_closure_projects_list(user, is_admin))
+        closure_projects = _get_closure_projects_list(user, is_admin)
+        pending_closure = len([p for p in closure_projects if not (p.get('reviewer_signoff') or p.get('has_signed_off'))])
     except Exception:
         pending_closure = 0
 
@@ -758,8 +760,11 @@ def _get_impact_projects_list(user, is_admin):
     query = Project.query.filter(
         Project.org_id == user.org_id,
         Project.current_stage == 8,
+        Project.status != 'Closed',
+        ~Project.status.in_(['Rejected', 'Stage 1 Rejected', 'Cancelled']),
         Project.status.in_([
-            'Stage 8 Submitted', 'Stage 8 Reviewer Approved', 'Stage 8 Approved'
+            'Stage 8 Submitted', 'Stage 8 Reviewer Approved', 'Stage 8 Approved',
+            'Impact Approved', 'SOP Created', 'Pending Closure', 'Pending CEO Review', 'Pending CEO Closure'
         ])
     )
 
@@ -768,12 +773,13 @@ def _get_impact_projects_list(user, is_admin):
     if user.dept and user.dept.name not in ['All', 'N/A']:
         user_dept_id = user.department_id
 
-    if not is_admin:
+    if not is_admin and user_dept_id:
         from sqlalchemy import or_
-        if user_dept_id:
-            query = query.filter(or_(Project.department_id == user_dept_id, Project.reviewer_id == user.id, Project.department_id.is_(None)))
-        else:
-            query = query.filter(or_(Project.reviewer_id == user.id, Project.department_id.is_(None)))
+        query = query.filter(or_(
+            Project.department_id == user_dept_id,
+            Project.reviewer_id == user.id,
+            Project.department_id.is_(None)
+        ))
         
     projects = query.all()
     result = []
@@ -786,8 +792,17 @@ def _get_impact_projects_list(user, is_admin):
 
         has_sop = (sop is not None) or bool(impact and impact.sop_standardization) or bool(wf8_data.get('sop_standardization'))
         
-        baseline_data, final_data, kpi_pct, results_data, cost_savings = _extract_project_impact_metrics(p, impact)
+        try:
+            baseline_data, final_data, kpi_pct, results_data, cost_savings = _extract_project_impact_metrics(p, impact)
+        except Exception:
+            baseline_data = {'label': 'Baseline', 'value': '—'}
+            final_data = {'label': 'Final', 'value': '—'}
+            kpi_pct = 0
+            results_data = []
+            cost_savings = 0
+
         has_impact = bool(results_data or (final_data.get('value') not in (None, '', '—')))
+        is_approved = (impact.status == "Approved" or p.status in ['Impact Approved', 'SOP Created', 'Pending Closure', 'Pending CEO Review', 'Pending CEO Closure']) if impact else (p.status in ['Impact Approved', 'SOP Created', 'Pending Closure', 'Pending CEO Review', 'Pending CEO Closure'])
 
         result.append({
             "id": p.id,
@@ -800,7 +815,7 @@ def _get_impact_projects_list(user, is_admin):
             "cost_savings": cost_savings,
             "status": p.status,
             "impact_status": impact.status if impact else "Pending",
-            "approved": (impact.status == "Approved") if impact else False,
+            "approved": is_approved,
             "has_sop": has_sop,
             "sop_id": sop.id if sop else None,
             "has_impact": has_impact
@@ -809,30 +824,31 @@ def _get_impact_projects_list(user, is_admin):
 
 def _get_closure_projects_list(user, is_admin):
     from sqlalchemy import or_
-    approved_impact_ids = [s.project_id for s in Stage8Standardization.query.filter_by(status='Approved').all()]
 
-    closure_statuses = ['Impact Approved', 'SOP Created', 'Pending Closure', 'Pending CEO Review', 'Pending CEO Closure']
-    status_conditions = [Project.status.in_(closure_statuses)]
-    if approved_impact_ids:
-        status_conditions.append(Project.id.in_(approved_impact_ids))
+    closure_statuses = [
+        'Stage 8 Approved', 'Stage 8 Reviewer Approved',
+        'Impact Approved', 'SOP Created', 'Pending Closure', 
+        'Pending CEO Review', 'Pending CEO Closure'
+    ]
 
     query = Project.query.filter(
         Project.org_id == user.org_id,
+        Project.current_stage == 8,
         Project.status != 'Closed',
-        ~Project.status.in_(['Stage 8 Submitted', 'Stage 8 Reviewer Approved', 'Stage 8 Approved', 'Rejected', 'Stage 1 Rejected']),
-        or_(*status_conditions)
+        ~Project.status.in_(['Stage 8 Submitted', 'Rejected', 'Stage 1 Rejected', 'Cancelled']),
+        Project.status.in_(closure_statuses)
     )
     # Apply dept filter if user has a specific dept
     user_dept_id = None
     if user.dept and user.dept.name not in ['All', 'N/A']:
         user_dept_id = user.department_id
 
-    if not is_admin:
-        from sqlalchemy import or_
-        if user_dept_id:
-            query = query.filter(or_(Project.department_id == user_dept_id, Project.reviewer_id == user.id, Project.department_id.is_(None)))
-        else:
-            query = query.filter(or_(Project.reviewer_id == user.id, Project.department_id.is_(None)))
+    if not is_admin and user_dept_id:
+        query = query.filter(or_(
+            Project.department_id == user_dept_id,
+            Project.reviewer_id == user.id,
+            Project.department_id.is_(None)
+        ))
         
     projects = query.all()
     result = []
