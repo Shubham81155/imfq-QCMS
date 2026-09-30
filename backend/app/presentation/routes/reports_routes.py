@@ -682,7 +682,7 @@ def _get_pdf_job(job_id: str) -> dict:
 @reports_bp.route('/download-mock', methods=['GET'])
 @jwt_required()
 def download_mock():
-    from datetime import datetime
+    from datetime import datetime, timezone
     import io
     import csv
     from app.infrastructure.database.models.models import (

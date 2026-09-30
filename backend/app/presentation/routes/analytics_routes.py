@@ -3182,6 +3182,87 @@ def export_analytics():
 # ─────────────────────────────────────────────────────────────────────────────
 # NEW: Drill-Down API
 # ─────────────────────────────────────────────────────────────────────────────
+def _extract_invoice_amount(inv):
+    if not inv:
+        return 0.0
+    tot = float(inv.total_amount or 0.0)
+    if tot > 0:
+        return tot
+    base = float(inv.base_amount or 0.0)
+    gst = float(inv.gst_amount or 0.0)
+    disc = float(inv.discount_amount or 0.0)
+    calc_tot = base + gst - disc
+    if calc_tot > 0:
+        return calc_tot
+    if base > 0:
+        return base
+    if inv.usage_breakdown and isinstance(inv.usage_breakdown, dict):
+        brk_tot = float(inv.usage_breakdown.get('total_amount') or inv.usage_breakdown.get('subtotal_amount') or 0.0)
+        if brk_tot > 0:
+            return brk_tot
+    if getattr(inv, 'payment', None):
+        pay_tot = float(inv.payment.final_amount or inv.payment.amount or 0.0)
+        if pay_tot > 0:
+            return pay_tot
+    if getattr(inv, 'payment_id', None):
+        pmt = db.session.get(SubscriptionPayment, inv.payment_id)
+        if pmt:
+            pay_tot = float(pmt.final_amount or pmt.amount or 0.0)
+            if pay_tot > 0:
+                return pay_tot
+    return 0.0
+
+
+def _get_plan_unit_price(s, org_id, plan_name):
+    p_name = (plan_name or (s.plan_name if s else '') or '').strip()
+    is_payg = (
+        'pay-as-you-go' in p_name.lower() or
+        'metered' in p_name.lower() or
+        'pay_as_you_go' in p_name.lower() or
+        (s and (getattr(s, 'pricing_model', '') or '').lower() == 'pay_as_you_go')
+    )
+    if is_payg:
+        from app.domain.services.payg_billing_service import PaygBillingService, DEFAULT_PAYG_RULES
+        payg_amt = 0.0
+        try:
+            brk = PaygBillingService.calculate_payg_bill_breakdown(org_id)
+            payg_amt = float(brk.get('total_amount', 0.0))
+        except Exception:
+            payg_amt = 0.0
+        if payg_amt <= 0.0:
+            rules = PaygBillingService.get_effective_payg_rules(org_id, plan_or_sub=s)
+            base_fee = float(rules.get('base_fee', 0.0) or DEFAULT_PAYG_RULES.get('base_fee', 999.0))
+            tax_pct = float(rules.get('tax_percent', 18.0))
+            payg_amt = round(base_fee * (1.0 + tax_pct / 100.0), 2)
+        return payg_amt
+
+    if p_name.lower() in ('trial', 'trialing', 'default trial plan', ''):
+        return 0.0
+
+    if s:
+        s_price = float(s.final_amount or s.base_price or 0.0)
+        if s_price > 0:
+            return s_price
+
+    sp = SaaSPlan.query.filter(db.or_(
+        func.lower(func.trim(SaaSPlan.name)) == p_name.lower(),
+        func.lower(func.trim(SaaSPlan.code)) == p_name.lower()
+    )).first()
+    if sp:
+        pricing = SaaSPlanPricing.query.filter_by(plan_id=sp.id, is_active=True).first()
+        if pricing and pricing.price:
+            return float(pricing.price)
+
+    from app.presentation.routes.billing_routes import PLAN_SPECS
+    if p_name in PLAN_SPECS:
+        return float(PLAN_SPECS[p_name]['price'] * 1.18)
+
+    return 999.0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# NEW: Drill-Down API
+# ─────────────────────────────────────────────────────────────────────────────
 @analytics_bp.route('/drilldown', methods=['GET'])
 @jwt_required()
 def drill_down():
@@ -3197,42 +3278,57 @@ def drill_down():
             
         drill_data = []
         for o in orgs.order_by(Organization.name.asc()).all():
-            # Fetch subscriptions for this organization
             subs = Subscription.query.filter_by(org_id=o.id).order_by(Subscription.id.desc()).all()
             
-            # Fetch completed payments from SubscriptionPayment
-            payments = SubscriptionPayment.query.filter_by(org_id=o.id).filter(
-                SubscriptionPayment.payment_status.in_(['Completed', 'Paid', 'SUCCESS'])
+            # Fetch completed payments (case-insensitive)
+            paid_payments = SubscriptionPayment.query.filter(
+                SubscriptionPayment.org_id == o.id,
+                func.lower(SubscriptionPayment.payment_status).in_(['completed', 'paid', 'success', 'captured', 'approved', 'verified'])
             ).all()
             
-            # Fetch standalone paid invoices from SubscriptionInvoice (only truly paid invoices)
-            invoices = SubscriptionInvoice.query.filter_by(org_id=o.id).filter(
-                SubscriptionInvoice.invoice_status.in_(['Paid', 'Completed', 'PAID']),
-                SubscriptionInvoice.payment_id == None
+            # Fetch paid invoices (case-insensitive)
+            paid_invoices = SubscriptionInvoice.query.filter(
+                SubscriptionInvoice.org_id == o.id,
+                func.lower(SubscriptionInvoice.invoice_status).in_(['paid', 'completed', 'settled', 'success'])
             ).all()
-            
-            # Aggregate total contribution from completed payments and billed invoices
-            payment_sum = sum(float((p.final_amount if p.final_amount is not None else p.amount) or 0.0) for p in payments)
-            invoice_sum = sum(float(inv.total_amount if inv.total_amount is not None else 0.0) for inv in invoices)
-            
-            total_paid = payment_sum + invoice_sum
-            invoice_count = len(payments) + len(invoices)
 
             if not subs:
-                # If active plan is Starter or custom without subscription row
                 plan_name = o.subscription_plan or 'Starter'
                 sub_uid = f"SUB-{o.id:04d}"
-                if total_paid == 0.0 and plan_name.strip().lower() not in ('trial', 'trialing', 'default trial plan', ''):
-                    sp = SaaSPlan.query.filter(db.or_(
-                        func.lower(func.trim(SaaSPlan.name)) == plan_name.strip().lower(),
-                        func.lower(func.trim(SaaSPlan.code)) == plan_name.strip().lower()
-                    )).first()
-                    if sp:
-                        pricing = SaaSPlanPricing.query.filter_by(plan_id=sp.id, is_active=True).first()
-                        if pricing and pricing.price:
-                            total_paid = float(pricing.price)
-                if invoice_count == 0 and total_paid > 0:
+                unit_price = _get_plan_unit_price(None, o.id, plan_name)
+
+                accounted_pay_ids = set()
+                total_paid = 0.0
+                for inv in paid_invoices:
+                    inv_amt = _extract_invoice_amount(inv)
+                    linked_pmt = next((p for p in paid_payments if p.id == inv.payment_id or getattr(p, 'invoice_id', None) == inv.id), None)
+                    if linked_pmt:
+                        accounted_pay_ids.add(linked_pmt.id)
+                        p_amt = float(linked_pmt.final_amount or linked_pmt.amount or 0.0)
+                        chosen = max(inv_amt, p_amt)
+                    else:
+                        chosen = inv_amt
+                    if chosen <= 0.0 and unit_price > 0:
+                        chosen = unit_price
+                    total_paid += chosen
+
+                for p in paid_payments:
+                    if p.id not in accounted_pay_ids:
+                        p_amt = float(p.final_amount or p.amount or 0.0)
+                        if p_amt <= 0.0 and unit_price > 0:
+                            p_amt = unit_price
+                        total_paid += p_amt
+
+                invoice_count = len(paid_invoices) + len([p for p in paid_payments if p.id not in accounted_pay_ids])
+
+                if invoice_count > 0 and total_paid == 0.0 and unit_price > 0:
+                    total_paid = invoice_count * unit_price
+                elif invoice_count == 0 and total_paid > 0:
                     invoice_count = 1
+                elif invoice_count == 0 and total_paid == 0.0 and unit_price > 0 and plan_name.lower() not in ('trial', 'trialing', 'default trial plan', ''):
+                    total_paid = unit_price
+                    invoice_count = 1
+
                 drill_data.append({
                     "organization": o.name,
                     "subscription_uid": sub_uid,
@@ -3242,36 +3338,49 @@ def drill_down():
                 })
             else:
                 for idx, s in enumerate(subs):
-                    sub_payments = [p for p in payments if p.subscription_id == s.id or (p.subscription_id is None and idx == 0)]
-                    sub_invoices = [inv for inv in invoices if inv.subscription_id == s.id or (inv.subscription_id is None and idx == 0)]
-                    
-                    sub_pay_sum = sum(float((p.final_amount if p.final_amount is not None else p.amount) or 0.0) for p in sub_payments)
-                    sub_inv_sum = sum(float(inv.total_amount if inv.total_amount is not None else 0.0) for inv in sub_invoices)
-                    
-                    s_total = sub_pay_sum + sub_inv_sum
-                    s_count = len(sub_payments) + len(sub_invoices)
-                    
-                    p_name = (s.plan_name or o.subscription_plan or '').strip()
-                    if s_total == 0.0 and p_name.lower() not in ('trial', 'trialing', 'default trial plan', ''):
-                        amt = float(s.final_amount or s.base_price or 0.0)
-                        if amt == 0.0:
-                            sp = SaaSPlan.query.filter(db.or_(
-                                func.lower(func.trim(SaaSPlan.name)) == p_name.lower(),
-                                func.lower(func.trim(SaaSPlan.code)) == p_name.lower()
-                            )).first()
-                            if sp:
-                                pricing = SaaSPlanPricing.query.filter_by(plan_id=sp.id, is_active=True).first()
-                                if pricing and pricing.price:
-                                    amt = float(pricing.price)
-                        s_total = amt
+                    sub_invoices = [inv for inv in paid_invoices if inv.subscription_id == s.id or (inv.subscription_id is None and idx == 0)]
+                    sub_payments = [p for p in paid_payments if p.subscription_id == s.id or (p.subscription_id is None and idx == 0)]
 
-                    if s_count == 0 and s_total > 0:
+                    p_name = (s.plan_name or o.subscription_plan or 'Starter').strip()
+                    unit_price = _get_plan_unit_price(s, o.id, p_name)
+
+                    accounted_pay_ids = set()
+                    s_total = 0.0
+
+                    for inv in sub_invoices:
+                        inv_amt = _extract_invoice_amount(inv)
+                        linked_pmt = next((p for p in sub_payments if p.id == inv.payment_id or getattr(p, 'invoice_id', None) == inv.id), None)
+                        if linked_pmt:
+                            accounted_pay_ids.add(linked_pmt.id)
+                            p_amt = float(linked_pmt.final_amount or linked_pmt.amount or 0.0)
+                            chosen = max(inv_amt, p_amt)
+                        else:
+                            chosen = inv_amt
+                        if chosen <= 0.0 and unit_price > 0:
+                            chosen = unit_price
+                        s_total += chosen
+
+                    for p in sub_payments:
+                        if p.id not in accounted_pay_ids:
+                            p_amt = float(p.final_amount or p.amount or 0.0)
+                            if p_amt <= 0.0 and unit_price > 0:
+                                p_amt = unit_price
+                            s_total += p_amt
+
+                    s_count = len(sub_invoices) + len([p for p in sub_payments if p.id not in accounted_pay_ids])
+
+                    if s_count > 0 and s_total == 0.0 and unit_price > 0:
+                        s_total = s_count * unit_price
+                    elif s_count == 0 and s_total > 0:
+                        s_count = 1
+                    elif s_count == 0 and s_total == 0.0 and unit_price > 0 and p_name.lower() not in ('trial', 'trialing', 'default trial plan', ''):
+                        s_total = unit_price
                         s_count = 1
 
                     drill_data.append({
                         "organization": o.name,
                         "subscription_uid": s.subscription_uid or f"SUB-{s.id:04d}",
-                        "plan": s.plan_name or o.subscription_plan or 'Starter',
+                        "plan": p_name,
                         "invoice_count": s_count,
                         "total_paid": round(s_total, 2)
                     })
