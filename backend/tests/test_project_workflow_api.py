@@ -1,5 +1,7 @@
-import pytest
+import uuid
 import time
+from unittest.mock import patch
+import pytest
 from app import db
 from app.infrastructure.database.models import Project
 from app.domain.services.project_closure_service import ProjectClosureService
@@ -7,7 +9,7 @@ from app.domain.services.project_closure_service import ProjectClosureService
 
 def test_project_creation_and_retrieval(client, auth_context):
     """Test project creation and retrieval through API."""
-    unique_uid = f"PRJ-TST-{int(time.time())}"
+    unique_uid = f"PRJ-TST-{uuid.uuid4().hex[:8]}"
     create_payload = {
         "title": "Automated Pytest QC Project",
         "project_uid": unique_uid,
@@ -15,7 +17,11 @@ def test_project_creation_and_retrieval(client, auth_context):
         "work_area": "Assembly Line A",
         "description": "Continuous improvement in line A cycle time."
     }
-    res = client.post('/api/projects/', json=create_payload, headers=auth_context['headers'])
+    with patch(
+        'app.domain.services.subscription_service.SubscriptionManager.check_project_limit',
+        return_value=(True, 'Unlimited')
+    ):
+        res = client.post('/api/projects/', json=create_payload, headers=auth_context['headers'])
     # Should succeed or return project representation
     if res.status_code in [200, 201]:
         data = res.get_json()
@@ -28,7 +34,7 @@ def test_project_closure_service_lifecycle(app, auth_context):
         # Create a sample project in DB
         project = Project(
             title="Pytest Closure Lifecycle Project",
-            project_uid=f"PRJ-CLS-{int(time.time())}",
+            project_uid=f"PRJ-CLS-{uuid.uuid4().hex[:8]}",
             org_id=auth_context['org_id'],
             creator_id=auth_context['user_id'],
             team_leader_id=auth_context['user_id'],
@@ -54,21 +60,22 @@ def test_project_closure_service_lifecycle(app, auth_context):
         assert p_closed.end_date is not None
 
 
-def test_project_governance_and_team_update(client, auth_context, app):
+@patch('app.domain.services.subscription_service.SubscriptionManager.check_project_limit', return_value=(True, 'Unlimited'))
+def test_project_governance_and_team_update(mock_limit, client, auth_context, app):
     """Test updating team members, facilitator, team leader, and reviewer on project."""
-    with app.app_context():
-        project = Project(
-            title="Pytest Governance Team Update Project",
-            project_uid=f"PRJ-GOV-{int(time.time())}",
-            org_id=auth_context['org_id'],
-            creator_id=auth_context['user_id'],
-            current_stage=1,
-            status="In Progress"
-        )
-        db.session.add(project)
-        db.session.flush()
-        pid = int(project.id)
-        db.session.commit()
+    unique_uid = f"PRJ-GOV-{uuid.uuid4().hex[:8]}"
+    create_res = client.post('/api/projects/', json={
+        "title": "Pytest Governance Team Update Project",
+        "project_uid": unique_uid,
+        "category": "Quality",
+        "description": "Governance update testing",
+        "work_area": "Plant 1",
+        "member_ids": []
+    }, headers=auth_context['headers'])
+    assert create_res.status_code in (200, 201), f"Failed to create project: {create_res.get_data(as_text=True)}"
+    c_data = create_res.get_json()
+    pid = c_data.get('id') or (c_data.get('project') or {}).get('id')
+    assert pid is not None
 
     payload = {
         "team_leader_id": auth_context['user_id'],

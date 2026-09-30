@@ -851,13 +851,13 @@ def get_login_config():
     if not identifier:
         # Fallback to general system settings: return union of all login options active in the system
         all_orgs = Organization.query.filter(Organization.login_options.isnot(None)).all()
-        options = ["email"]
+        options = ["email", "phone"]
         for o in all_orgs:
             for opt in (o.login_options or []):
                 if opt not in options:
                     options.append(opt)
         
-        system_labels = {"email": "Email ID", "username": "Username"}
+        system_labels = {"email": "Email ID", "phone": "Phone Number", "username": "Username"}
         field_labels = {}
         for key in options:
             if key in system_labels:
@@ -915,23 +915,25 @@ def get_login_config():
 
     if not user or not user.organization:
         return jsonify({
-            "login_options": ["email"], 
-            "field_labels": {"email": "Email ID"},
+            "login_options": ["email", "phone"], 
+            "field_labels": {"email": "Email ID", "phone": "Phone Number"},
             "sso_config": sso_config,
             "branding": branding
         }), 200
 
     org = user.organization
-    options = org.login_options or ["email"]
+    options = org.login_options or ["email", "phone"]
     if "email" not in options:
         options = ["email"] + options
+    if "phone" not in options:
+        options = options + ["phone"]
 
     # Build human-readable labels
     from app.infrastructure.database.models.models import UserCustomField
     custom_fields = UserCustomField.query.filter_by(org_id=org.id).all()
     cf_map = {cf.field_key: cf.display_name for cf in custom_fields}
 
-    system_labels = {"email": "Email ID", "username": "Username"}
+    system_labels = {"email": "Email ID", "phone": "Phone Number", "username": "Username"}
     field_labels = {}
     for key in options:
         if key in system_labels:
