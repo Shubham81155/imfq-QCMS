@@ -1336,20 +1336,41 @@ def update_user(user_id):
     current_user = db.session.get(User, current_user_id)
     if not current_user:
         return jsonify({"message": "User not found"}), 404
-    user = User.query.join(Role).filter(
-        User.id == user_id, 
-        User.org_id == current_user.org_id,
-        Role.name != 'SuperAdmin'
-    ).first_or_404()
+
+    is_sa = (
+        (current_user.role and current_user.role.name == 'SuperAdmin') or 
+        getattr(current_user, 'is_super_admin', False) or 
+        (isinstance(current_user.custom_fields, dict) and bool(current_user.custom_fields.get('super_admin_role')))
+    )
+
+    query = User.query.filter(User.id == user_id)
+    if not is_sa and current_user.org_id:
+        query = query.filter(User.org_id == current_user.org_id)
+
+    user = query.first()
+    if not user:
+        return jsonify({"message": f"User not found or access denied."}), 404
+
+    if user.role and user.role.name == 'SuperAdmin' and not is_sa:
+        return jsonify({"message": "Access denied: cannot modify a platform SuperAdmin user."}), 403
+
     data = request.get_json()
     if not data:
         return jsonify({"message": "No data provided"}), 200
 
+    from sqlalchemy import func as sqlfunc
+
+    # Update full_name and safe username uniqueness
     if data.get('username') or data.get('full_name'):
         val = str(data.get('username') or data.get('full_name')).strip()
         user.full_name = val
         if ' ' not in val and val:
-            user.username = val
+            existing_u = User.query.filter(
+                sqlfunc.lower(User.username) == val.lower(),
+                User.id != user_id
+            ).first()
+            if not existing_u:
+                user.username = val
 
     if 'phone' in data or 'phone_number' in data:
         phone = (data.get('phone') or data.get('phone_number') or '').strip()
@@ -1375,7 +1396,6 @@ def update_user(user_id):
             import re
             if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', email):
                 return jsonify({"message": "Invalid email address format"}), 400
-            from sqlalchemy import func as sqlfunc
             existing_email = User.query.filter(
                 sqlfunc.lower(User.email) == email.lower(),
                 User.id != user_id
@@ -1389,41 +1409,48 @@ def update_user(user_id):
 
     if data.get('role'):
         role = Role.query.filter_by(name=data.get('role')).first()
-        if role: user.role_id = role.id
+        if role:
+            user.role_id = role.id
 
-    # Handle plant first so department lookup in plant can prioritize correctly
+    # Handle plant location (accepts integer ID or plant name)
     target_pid = None
     if 'plant_id' in data or 'plant' in data or 'plant_location' in data:
         pid = data.get('plant_id') or data.get('plant') or data.get('plant_location')
-        if pid and str(pid).isdigit():
-            target_pid = int(pid)
+        if pid is not None and str(pid).strip() != '' and str(pid).strip().lower() != 'none':
+            if str(pid).isdigit():
+                target_pid = int(pid)
+            else:
+                plant_obj = Plant.query.filter_by(name=str(pid).strip(), org_id=user.org_id).first()
+                if plant_obj:
+                    target_pid = plant_obj.id
             user.plant_id = target_pid
         elif pid == '' or pid is None:
             user.plant_id = None
 
     dept_input = data.get('department') or data.get('dept_name')
     if dept_input is not None:
-        if dept_input == '' or dept_input == 'N/A':
+        dept_str = str(dept_input).strip()
+        if dept_str == '' or dept_str.upper() in ('N/A', 'NONE', 'NULL'):
             user.department_id = None
         else:
             dept = None
-            # Try as ID first if numeric
-            if str(dept_input).isdigit():
-                dept = Department.query.filter_by(id=int(dept_input), org_id=current_user.org_id).first()
-
-            # Try as Name if not found
+            if dept_str.isdigit():
+                dept = Department.query.filter_by(id=int(dept_str), org_id=user.org_id).first()
             if not dept:
-                query = Department.query.filter_by(name=str(dept_input), org_id=current_user.org_id)
+                query = Department.query.filter_by(name=dept_str, org_id=user.org_id)
                 if user.plant_id:
                     dept = query.filter_by(plant_id=user.plant_id).first()
                 if not dept:
                     dept = query.first()
-
-            if not dept and not str(dept_input).isdigit():
-                dept = Department(name=str(dept_input), org_id=current_user.org_id, plant_id=user.plant_id)
-                db.session.add(dept)
-                db.session.flush()
-
+            if not dept and not dept_str.isdigit() and user.org_id:
+                try:
+                    dept = Department(name=dept_str, org_id=user.org_id, plant_id=user.plant_id)
+                    db.session.add(dept)
+                    db.session.flush()
+                except Exception as flush_err:
+                    db.session.rollback()
+                    current_app.logger.warning(f"Could not auto-create department '{dept_str}': {flush_err}")
+                    dept = None
             if dept:
                 user.department_id = dept.id
                 if dept.plant_id and not user.plant_id:
@@ -1454,14 +1481,24 @@ def update_user(user_id):
                 )
                 db.session.add(notif)
             except Exception as e:
-                print("Failed to auto-resolve tickets/notify user on reactivation:", e)
+                current_app.logger.warning(f"Failed to auto-resolve tickets/notify user on reactivation: {e}")
 
     if data.get('password'):
         user.password = data.get('password')
         user.is_temp_password = True
 
-    custom_field_defs = UserCustomField.query.filter_by(org_id=user.org_id).all()
-    custom_values = dict(user.custom_fields or {})
+    custom_field_defs = UserCustomField.query.filter_by(org_id=user.org_id).all() if user.org_id else []
+    custom_values = {}
+    if isinstance(user.custom_fields, dict):
+        custom_values = dict(user.custom_fields)
+    elif isinstance(user.custom_fields, str) and user.custom_fields:
+        try:
+            import json
+            parsed = json.loads(user.custom_fields)
+            if isinstance(parsed, dict):
+                custom_values = parsed
+        except Exception:
+            custom_values = {}
 
     for fd in custom_field_defs:
         if fd.field_key in ('username', 'role', 'department'):
@@ -1476,25 +1513,34 @@ def update_user(user_id):
             custom_values[fd.field_key] = val_str
 
     user.custom_fields = custom_values
-    from sqlalchemy.orm.attributes import flag_modified
     flag_modified(user, "custom_fields")
 
     try:
         db.session.commit()
-        log_action(current_user.id, "UPDATE_USER", current_user.org_id, "users", user.id, data)
-        return jsonify({
-            "message": "User updated successfully",
-            "user": {
-                "id": user.id,
-                "username": user.username,
-                "full_name": user.full_name,
-                "role": user.role.name,
-                "department": user.dept.name if user.dept else "N/A"
-            }
-        }), 200
     except Exception as e:
         db.session.rollback()
+        from app.presentation.routes.error_helpers import internal_server_error
         return internal_server_error(e, "Failed to update user.")
+
+    # Record audit log safely without risking transaction failure
+    try:
+        log_action(current_user.id, "UPDATE_USER", user.org_id or current_user.org_id, "users", user.id, data)
+    except Exception as log_err:
+        current_app.logger.warning(f"Failed to record audit log for UPDATE_USER {user.id}: {log_err}")
+
+    role_name = user.role.name if user.role else (data.get('role') or "Team Member")
+    dept_name = user.dept.name if user.dept else "N/A"
+
+    return jsonify({
+        "message": "User updated successfully",
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "full_name": user.full_name or user.username,
+            "role": role_name,
+            "department": dept_name
+        }
+    }), 200
 
 
 

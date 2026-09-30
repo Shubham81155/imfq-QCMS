@@ -236,6 +236,32 @@ def create_app():
         app.register_blueprint(document_branding_bp)
         app.register_blueprint(feature_engine_bp)
 
+        # ── Global API Error Handlers: Ensure JSON Responses for all /api/ Routes ────
+        from flask import request as flask_req
+        @app.errorhandler(404)
+        def handle_api_404(e):
+            if flask_req.path.startswith('/api/'):
+                return jsonify({'status': 'error', 'message': 'API endpoint not found', 'code': 404}), 404
+            return e
+
+        @app.errorhandler(405)
+        def handle_api_405(e):
+            if flask_req.path.startswith('/api/'):
+                return jsonify({'status': 'error', 'message': 'Method not allowed', 'code': 405}), 405
+            return e
+
+        @app.errorhandler(413)
+        def handle_api_413(e):
+            if flask_req.path.startswith('/api/'):
+                return jsonify({'status': 'error', 'message': 'File size exceeds allowed upload limit.', 'code': 413}), 413
+            return e
+
+        @app.errorhandler(500)
+        def handle_api_500(e):
+            if flask_req.path.startswith('/api/'):
+                return jsonify({'status': 'error', 'message': 'Internal server error occurred.', 'code': 500}), 500
+            return e
+
         # ── QCMS Security Middleware ───────────────────────────────────────────
         # Registers WAF, IP whitelist/blacklist, rate limiting, brute-force
         # protection, and security headers — all driven by security_settings in DB
@@ -1175,6 +1201,14 @@ def create_app():
 
     @app.errorhandler(Exception)
     def handle_global_exception(e):
+        from werkzeug.exceptions import HTTPException
+        if isinstance(e, HTTPException):
+            return jsonify({
+                "status": "error",
+                "message": e.description,
+                "code": e.name.upper().replace(" ", "_")
+            }), e.code
+
         import logging
         logging.getLogger('qcms.app').exception("[QCMS Global Exception] %s", e)
         try:

@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -159,7 +159,32 @@
             text-decoration: underline;
         }
 
-        @media (max-width: 900px) {
+        
+        .back-to-home {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.8125rem;
+            font-weight: 600;
+            color: var(--ds-text-secondary);
+            text-decoration: none;
+            padding: 6px 10px;
+            border-radius: 8px;
+            transition: background 0.15s ease, color 0.15s ease;
+            margin-bottom: var(--ds-space-6);
+        }
+
+        .back-to-home:hover {
+            background: var(--ds-accent-ghost);
+            color: var(--ds-accent);
+            text-decoration: none;
+        }
+
+        .back-to-home i {
+            width: 15px;
+            height: 15px;
+        }
+@media (max-width: 900px) {
             .login-wrapper {
                 flex-direction: column;
                 max-width: 500px;
@@ -188,6 +213,9 @@
     <div class="login-wrapper glass-card">
         <!-- Left: Branding -->
         <div class="login-branding">
+            <a href="/index.html" class="back-to-home" title="Back to Home">
+                <i data-lucide="arrow-left"></i> Back
+            </a>
             <div style="margin-bottom: auto;">
                 <div class="brand-text" id="loginBrandHeader"
                     style="font-size: 1.1rem; opacity: 0.8; font-weight: 700; display:flex; align-items:center; gap:8px;">
@@ -296,7 +324,7 @@
                 successMsgEl.querySelector('span').textContent = "Registration successful! You can now log in.";
                 successMsgEl.style.display = 'flex';
             } else if (urlParams.get('reset')) {
-                successMsgEl.querySelector('span').textContent = "✓ Password updated successfully! Please log in with your new password.";
+                successMsgEl.querySelector('span').textContent = "âœ“ Password updated successfully! Please log in with your new password.";
                 successMsgEl.style.display = 'flex';
             } else if (urlParams.get('reason') === 'session_terminated') {
                 const errEl = document.getElementById('errorMsg');
@@ -308,7 +336,7 @@
 
             if (window.lucide) lucide.createIcons();
 
-            // ── Dynamic Login Label ───────────────────────────────────────
+            // â”€â”€ Dynamic Login Label â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             const FIELD_LABELS = {
                 email:    'Email ID',
                 username: 'Username',

@@ -541,15 +541,27 @@ def apply_new_plan_to_organization(org, plan_name, billing_cycle=None, approved_
 
     import secrets
     import math
+    import re
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     pname = str(plan_name).strip()
+    pname_clean = re.sub(r'\s+plan$', '', pname, flags=re.IGNORECASE).strip()
 
     from app.infrastructure.database.models.models import db, SaaSPlan, SaaSPlanPricing, Subscription, User
     from sqlalchemy import func, or_
 
     sp = SaaSPlan.query.filter(
-        or_(func.lower(SaaSPlan.name) == pname.lower(), func.lower(SaaSPlan.code) == pname.lower())
+        or_(
+            func.lower(SaaSPlan.name) == pname.lower(),
+            func.lower(SaaSPlan.code) == pname.lower(),
+            func.lower(SaaSPlan.name) == pname_clean.lower(),
+            func.lower(SaaSPlan.code) == pname_clean.lower()
+        )
     ).first()
+
+    if not sp and ('pay-as-you-go' in pname.lower() or 'metered' in pname.lower()):
+        sp = SaaSPlan.query.filter(
+            or_(SaaSPlan.plan_type == 'Pay-As-You-Go', SaaSPlan.code == 'payg')
+        ).first()
 
     # Determine limits
     max_users = 50

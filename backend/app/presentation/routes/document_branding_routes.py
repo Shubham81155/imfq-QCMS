@@ -196,19 +196,18 @@ def upload_platform_logo():
         if not user:
             return jsonify({'status': 'error', 'message': 'User authentication required or session expired.'}), 401
 
-        if 'logo_file' not in request.files:
-            return jsonify({'status': 'error', 'message': 'No file uploaded'}), 400
-
-        file = request.files['logo_file']
+        file = request.files.get('logo_file') or request.files.get('file') or request.files.get('favicon_file')
         if not file or file.filename == '':
-            return jsonify({'status': 'error', 'message': 'No file selected'}), 400
+            return jsonify({'status': 'error', 'message': 'No file selected for upload'}), 400
 
-        allowed_exts = {'png', 'jpg', 'jpeg', 'svg', 'webp', 'gif'}
+        allowed_exts = {'png', 'jpg', 'jpeg', 'svg', 'webp', 'gif', 'ico'}
         ext = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else ''
         if ext not in allowed_exts:
-            return jsonify({'status': 'error', 'message': 'Invalid file type. Allowed: PNG, JPG, JPEG, SVG, WEBP'}), 400
+            return jsonify({'status': 'error', 'message': 'Invalid file type. Allowed: PNG, JPG, JPEG, SVG, WEBP, ICO'}), 400
 
-        filename = f"logo_{int(time.time())}_{secure_filename(file.filename)}"
+        asset_type = (request.form.get('asset_type') or request.form.get('type') or 'logo').strip().lower()
+        prefix = 'favicon' if asset_type == 'favicon' else ('logo_dark' if asset_type in ('dark-logo', 'dark_logo') else 'logo')
+        filename = f"{prefix}_{int(time.time())}_{secure_filename(file.filename)}"
 
         # Save using centralized storage provider (handles Azure Blob, Supabase, or local filesystem volume)
         result = storage.save_file(file, filename=filename, subfolder="branding")
@@ -232,26 +231,39 @@ def upload_platform_logo():
             assets = BrandingAssetsConfig(org_id=org_id)
             db.session.add(assets)
 
-        assets.logo_url = relative_url
-        assets.print_logo_url = relative_url
-        assets.pdf_logo_url = relative_url
+        if asset_type == 'favicon':
+            assets.favicon_url = relative_url
+        elif asset_type in ('dark-logo', 'dark_logo'):
+            assets.dark_logo_url = relative_url
+        else:
+            assets.logo_url = relative_url
+            assets.print_logo_url = relative_url
+            assets.pdf_logo_url = relative_url
 
         # Only update the org's logo_url when an org-level user uploads —
         # SuperAdmin logo uploads are platform-level only and must NOT touch any org's logo_url
         if org_id and user.organization:
-            user.organization.logo_url = relative_url
+            if asset_type != 'favicon':
+                user.organization.logo_url = relative_url
         elif org_id is None:
-            # Sync to global PlatformSettings so Settings -> Branding sees the exact same logo
+            # Sync to global PlatformSettings so Settings -> Branding sees the exact same logo/favicon
             try:
                 from app.infrastructure.database.models.billing import PlatformSettings
                 sys_settings = PlatformSettings.query.first()
                 if sys_settings:
                     bs = dict(sys_settings.branding_settings or {})
-                    bs['logo_url'] = relative_url
                     if 'assets' not in bs or not isinstance(bs['assets'], dict):
                         bs['assets'] = {}
-                    bs['assets']['main-logo'] = relative_url
-                    bs['assets']['logo'] = relative_url
+                    if asset_type == 'favicon':
+                        bs['favicon_url'] = relative_url
+                        bs['assets']['favicon'] = relative_url
+                    elif asset_type in ('dark-logo', 'dark_logo'):
+                        bs['dark_logo_url'] = relative_url
+                        bs['assets']['dark-logo'] = relative_url
+                    else:
+                        bs['logo_url'] = relative_url
+                        bs['assets']['main-logo'] = relative_url
+                        bs['assets']['logo'] = relative_url
                     sys_settings.branding_settings = bs
             except Exception:
                 pass
@@ -263,8 +275,10 @@ def upload_platform_logo():
 
         return jsonify({
             "status": "success",
-            "message": "Platform logo uploaded successfully!",
+            "message": f"{asset_type.replace('-', ' ').title()} uploaded successfully!",
             "logo_url": relative_url,
+            "asset_url": relative_url,
+            "asset_type": asset_type,
             "branding_context": ctx
         }), 200
     except Exception as e:

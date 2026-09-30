@@ -4429,6 +4429,7 @@ const SuperAdmin = {
                 const mReceipt = bootstrap.Modal.getInstance(document.getElementById('receiptPreviewModal'));
                 if (mReceipt) mReceipt.hide();
                 this.loadOfflinePayments();
+                this.notifyFinancialSync();
             } else {
                 OctaQube.toast(res.message || 'Failed to reject payment', 'error');
             }

@@ -2266,7 +2266,6 @@ def get_enterprise_dashboard():
             p_tot = float(pay_sum_q.scalar() or 0.0)
             i_tot = float(paid_inv_q.scalar() or 0.0)
             total_p = p_tot + i_tot
-            return total_p
 
             if total_p == 0.0:
                 sub_q = Subscription.query.filter(
@@ -2277,13 +2276,25 @@ def get_enterprise_dashboard():
                     sub_q = sub_q.filter_by(org_id=f['org_id'])
                 for s in sub_q.all():
                     amt = float(s.final_amount or s.base_price or 0.0)
-                    if amt == 0.0:
+                    if amt == 0.0 and s.plan_name:
                         sp = SaaSPlan.query.filter(db.or_(SaaSPlan.name == s.plan_name, SaaSPlan.code == s.plan_name)).first()
                         if sp:
                             pricing = SaaSPlanPricing.query.filter_by(plan_id=sp.id, is_active=True).first()
                             if pricing:
                                 amt = float(pricing.price or 0.0)
                     total_p += amt
+                
+                org_q = Organization.query.filter(Organization.is_deleted == False, Organization.is_platform_org == False)
+                if f['org_id']:
+                    org_q = org_q.filter_by(id=f['org_id'])
+                sub_org_ids = set(s.org_id for s in sub_q.all() if s.org_id)
+                for o in org_q.all():
+                    if o.id not in sub_org_ids and (o.subscription_plan or '').strip().lower() not in ('trial', 'trialing', 'default trial plan', ''):
+                        sp = SaaSPlan.query.filter(db.or_(SaaSPlan.name == o.subscription_plan, SaaSPlan.code == o.subscription_plan)).first()
+                        if sp:
+                            pricing = SaaSPlanPricing.query.filter_by(plan_id=sp.id, is_active=True).first()
+                            if pricing and pricing.price:
+                                total_p += float(pricing.price)
             return total_p
 
         def get_mrr(s_dt, e_dt):
@@ -3211,6 +3222,15 @@ def drill_down():
                 # If active plan is Starter or custom without subscription row
                 plan_name = o.subscription_plan or 'Starter'
                 sub_uid = f"SUB-{o.id:04d}"
+                if total_paid == 0.0 and plan_name.strip().lower() not in ('trial', 'trialing', 'default trial plan', ''):
+                    sp = SaaSPlan.query.filter(db.or_(
+                        func.lower(func.trim(SaaSPlan.name)) == plan_name.strip().lower(),
+                        func.lower(func.trim(SaaSPlan.code)) == plan_name.strip().lower()
+                    )).first()
+                    if sp:
+                        pricing = SaaSPlanPricing.query.filter_by(plan_id=sp.id, is_active=True).first()
+                        if pricing and pricing.price:
+                            total_paid = float(pricing.price)
                 if invoice_count == 0 and total_paid > 0:
                     invoice_count = 1
                 drill_data.append({
@@ -3231,6 +3251,20 @@ def drill_down():
                     s_total = sub_pay_sum + sub_inv_sum
                     s_count = len(sub_payments) + len(sub_invoices)
                     
+                    p_name = (s.plan_name or o.subscription_plan or '').strip()
+                    if s_total == 0.0 and p_name.lower() not in ('trial', 'trialing', 'default trial plan', ''):
+                        amt = float(s.final_amount or s.base_price or 0.0)
+                        if amt == 0.0:
+                            sp = SaaSPlan.query.filter(db.or_(
+                                func.lower(func.trim(SaaSPlan.name)) == p_name.lower(),
+                                func.lower(func.trim(SaaSPlan.code)) == p_name.lower()
+                            )).first()
+                            if sp:
+                                pricing = SaaSPlanPricing.query.filter_by(plan_id=sp.id, is_active=True).first()
+                                if pricing and pricing.price:
+                                    amt = float(pricing.price)
+                        s_total = amt
+
                     if s_count == 0 and s_total > 0:
                         s_count = 1
 

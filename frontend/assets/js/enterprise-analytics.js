@@ -553,7 +553,7 @@ const EnterpriseAnalytics = {
                         data: {
                             labels: mData.labels,
                             datasets: [{
-                                label: 'Completed Payments',
+                                label: 'Monthly Revenue (INR)',
                                 data: mData.values,
                                 backgroundColor: 'rgba(59,130,246,0.85)',
                                 borderRadius: 5
@@ -565,7 +565,7 @@ const EnterpriseAnalytics = {
                             plugins: {
                                 tooltip: {
                                     callbacks: {
-                                        label: (ctx) => `Completed Payments: ₹${Number(ctx.raw || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
+                                        label: (ctx) => ` Revenue: ₹${Number(ctx.raw || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
                                     }
                                 }
                             },

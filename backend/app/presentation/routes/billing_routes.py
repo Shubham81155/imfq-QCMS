@@ -715,23 +715,43 @@ def _get_plan_details(plan_name):
             plan_name = 'Professional'
 
     pname = str(plan_name).strip()
+    import re
+    pname_clean = re.sub(r'\s+plan$', '', pname, flags=re.IGNORECASE).strip()
 
     # 1. Direct DB lookup by ID if numeric
     sp = None
     if pname.isdigit():
-        sp = SaaSPlan.query.get(int(pname))
+        sp = db.session.get(SaaSPlan, int(pname))
+    elif pname_clean.isdigit():
+        sp = db.session.get(SaaSPlan, int(pname_clean))
 
     # 2. Direct DB lookup by name or code
     if not sp:
-        sp = SaaSPlan.query.filter(or_(SaaSPlan.name == pname, SaaSPlan.code == pname)).first()
+        sp = SaaSPlan.query.filter(
+            or_(
+                SaaSPlan.name == pname,
+                SaaSPlan.code == pname,
+                SaaSPlan.name == pname_clean,
+                SaaSPlan.code == pname_clean
+            )
+        ).first()
 
     if not sp:
         # Case-insensitive DB lookup
         all_plans = SaaSPlan.query.all()
+        pname_l = pname.lower()
+        pclean_l = pname_clean.lower()
         for p in all_plans:
-            if (p.name and p.name.lower() == pname.lower()) or (p.code and p.code.lower() == pname.lower()):
+            name_l = (p.name or '').lower()
+            code_l = (p.code or '').lower()
+            if name_l in (pname_l, pclean_l) or code_l in (pname_l, pclean_l):
                 sp = p
                 break
+
+    if not sp and ('pay-as-you-go' in pname.lower() or 'metered' in pname.lower()):
+        sp = SaaSPlan.query.filter(
+            or_(SaaSPlan.plan_type == 'Pay-As-You-Go', SaaSPlan.code == 'payg')
+        ).first()
 
     if sp:
         pricing = SaaSPlanPricing.query.filter_by(plan_id=sp.id, is_active=True).first()
@@ -751,14 +771,13 @@ def _get_plan_details(plan_name):
         total_price = base_price * 1.18
         return True, pname, base_price, total_price, spec['max_users'], spec['max_projects'], 'Monthly'
 
-    # 4. Global fallback to Professional
-    if 'Professional' in PLAN_SPECS:
-        spec = PLAN_SPECS['Professional']
+    if pname_clean in PLAN_SPECS:
+        spec = PLAN_SPECS[pname_clean]
         base_price = spec['price']
         total_price = base_price * 1.18
-        return True, 'Professional', base_price, total_price, spec['max_users'], spec['max_projects'], 'Monthly'
+        return True, pname_clean, base_price, total_price, spec['max_users'], spec['max_projects'], 'Monthly'
 
-    return False, None, 0.0, 0.0, 50, 10, 'Monthly'
+    return False, pname, 0.0, 0.0, 50, 10, 'Monthly'
 
 @billing_bp.route('/payment-gateways', methods=['GET'])
 @jwt_required()
@@ -1040,21 +1059,27 @@ def submit_offline_payment_proof():
     invoice_id = request.form.get('invoice_id')
     custom_amount = request.form.get('amount')
 
-    target_inv = None
+    # Find the primary invoice to associate with this proof
+    primary_inv = None
     if invoice_id:
-        target_inv = SubscriptionInvoice.query.filter_by(id=invoice_id, org_id=org_id).first()
-        if not target_inv:
-            target_inv = SubscriptionInvoice.query.filter_by(invoice_number=str(invoice_id), org_id=org_id).first()
-    if not target_inv:
-        # Check for outstanding metered or sent invoice for this org
-        target_inv = SubscriptionInvoice.query.filter_by(org_id=org_id)\
-            .filter(SubscriptionInvoice.invoice_status.in_(['Sent', 'SENT', 'Overdue', 'OVERDUE', 'Issued']))\
-            .order_by(SubscriptionInvoice.created_at.desc()).first()
+        primary_inv = SubscriptionInvoice.query.filter_by(id=invoice_id, org_id=org_id).first()
+        if not primary_inv:
+            primary_inv = SubscriptionInvoice.query.filter_by(invoice_number=str(invoice_id), org_id=org_id).first()
 
-    if target_inv and target_inv.total_amount:
-        target_inv.invoice_status = 'Pending Verification'
-        total_price = float(target_inv.total_amount)
-        inv_tag = f"[Invoice: {target_inv.invoice_number or target_inv.id}]"
+    # Find ALL outstanding invoices for this org
+    all_outstanding = SubscriptionInvoice.query.filter_by(org_id=org_id)\
+        .filter(SubscriptionInvoice.invoice_status.in_(['Sent', 'SENT', 'Overdue', 'OVERDUE', 'Issued']))\
+        .order_by(SubscriptionInvoice.created_at.desc()).all()
+
+    if not primary_inv and all_outstanding:
+        primary_inv = all_outstanding[0]  # Most recent outstanding invoice
+
+    if primary_inv and primary_inv.total_amount:
+        # Mark ALL outstanding invoices as Pending Verification
+        for inv in all_outstanding:
+            inv.invoice_status = 'Pending Verification'
+        total_price = float(primary_inv.total_amount)
+        inv_tag = f"[Invoice: {primary_inv.invoice_number or primary_inv.id}]"
         if not notes:
             notes = inv_tag
         elif inv_tag not in notes:
@@ -1196,129 +1221,180 @@ def list_offline_payments():
 def approve_offline_payment(proof_id):
     """SuperAdmin approves offline payment proof and immediately activates the plan"""
     sa_user_id = get_jwt_identity()
-    proof = db.session.get(OfflinePaymentProof, proof_id)
-    if not proof:
-        return jsonify({"message": "Payment record not found"}), 404
+    try:
+        proof = db.session.get(OfflinePaymentProof, proof_id)
+        if not proof:
+            return jsonify({"status": "error", "message": "Payment record not found"}), 404
 
-    if proof.status == 'Approved':
-        return jsonify({"message": "Payment proof has already been approved"}), 400
+        if proof.status == 'Approved':
+            return jsonify({"status": "error", "message": "Payment proof has already been approved"}), 400
 
-    org = db.session.get(Organization, proof.org_id)
-    if not org:
-        return jsonify({"message": "Organization not found"}), 404
+        org = db.session.get(Organization, proof.org_id)
+        if not org:
+            return jsonify({"status": "error", "message": "Organization not found"}), 404
 
-    is_valid, resolved_name, base_price, total_price, max_users, max_projects, cycle = _get_plan_details(proof.plan_name)
-    if not is_valid:
-        resolved_name = proof.plan_name
-        total_price = proof.amount or 0.0
-        base_price = total_price / 1.18
-        cycle = proof.billing_cycle or 'Monthly'
+        is_valid, resolved_name, base_price, total_price, max_users, max_projects, cycle = _get_plan_details(proof.plan_name)
+        if not is_valid:
+            resolved_name = proof.plan_name
+            cycle = proof.billing_cycle or 'Monthly'
 
-    gst = total_price - base_price
+        # If proof amount is specified, it represents the actual paid amount (e.g. invoice payment or custom top-up)
+        if proof.amount and float(proof.amount) > 0:
+            total_price = float(proof.amount)
+            base_price = round(total_price / 1.18, 2)
+        elif not total_price or total_price <= 0:
+            total_price = float(proof.amount or 0.0)
+            base_price = round(total_price / 1.18, 2)
 
-    # Approve proof record
-    proof.status = 'Approved'
-    proof.verified_by_id = int(sa_user_id)
-    proof.verified_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        gst = round(total_price - base_price, 2)
 
-    # Update Organization Plan and sync limits & subscription record
-    from app.domain.services.subscription_service import apply_new_plan_to_organization
-    apply_new_plan_to_organization(org, resolved_name, proof.billing_cycle or cycle, approved_by_id=sa_user_id)
+        # Approve proof record
+        proof.status = 'Approved'
+        try:
+            proof.verified_by_id = int(sa_user_id)
+        except (ValueError, TypeError):
+            proof.verified_by_id = None
+        proof.verified_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
-    # Record SubscriptionPayment
-    payment = SubscriptionPayment(
-        org_id=org.id,
-        amount=base_price,
-        currency=proof.currency,
-        plan_name=resolved_name,
-        billing_cycle=proof.billing_cycle or cycle,
-        payment_status='Completed',
-        transaction_id=proof.transaction_id,
-        payment_gateway='Dynamic QR',
-        gateway_reference=f"PROOF-{proof.id}",
-        gst_percent=18.0,
-        gst_amount=gst,
-        final_amount=total_price,
-        billing_period_start=datetime.now(timezone.utc).replace(tzinfo=None),
-        billing_period_end=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=365 if cycle in ('Yearly', 'Annual') else 30)
-    )
-    db.session.add(payment)
-    db.session.flush()
+        # Update Organization Plan and sync limits & subscription record
+        from app.domain.services.subscription_service import apply_new_plan_to_organization
+        apply_new_plan_to_organization(org, resolved_name, proof.billing_cycle or cycle, approved_by_id=sa_user_id)
 
-    # Record matching SubscriptionInvoice with Paid status or update existing outstanding invoice
-    target_inv = None
-    import re
-    inv_match = re.search(r'\[Invoice:\s*([^\]]+)\]', proof.notes or '')
-    if inv_match:
-        inv_ref = inv_match.group(1).strip()
-        target_inv = SubscriptionInvoice.query.filter_by(org_id=org.id)\
-            .filter((SubscriptionInvoice.invoice_number == inv_ref) | (SubscriptionInvoice.invoice_uid == inv_ref) | (SubscriptionInvoice.id == inv_ref)).first()
+        # Ensure unique transaction_id for SubscriptionPayment to avoid unique constraint violations
+        txn_id = (proof.transaction_id or '').strip() or f"TXN-OFFLINE-{proof.id}"
+        existing_txn = SubscriptionPayment.query.filter_by(transaction_id=txn_id).first()
+        if existing_txn:
+            txn_id = f"{txn_id}-PRF{proof.id}"
 
-    if not target_inv:
-        target_inv = SubscriptionInvoice.query.filter_by(org_id=org.id)\
-            .filter(SubscriptionInvoice.invoice_status.in_(['Pending Verification', 'Sent', 'SENT', 'Overdue', 'OVERDUE', 'Issued']))\
-            .order_by(SubscriptionInvoice.created_at.desc()).first()
-
-    if target_inv:
-        target_inv.invoice_status = 'Paid'
-        target_inv.payment_id = payment.id
-        payment.invoice_id = target_inv.id
-    else:
-        inv_date = proof.created_at or datetime.now(timezone.utc).replace(tzinfo=None)
-        inv_num = f"INV/{inv_date.strftime('%Y%m')}/{org.id:04d}-{payment.id:04d}"
-        invoice = SubscriptionInvoice(
+        # Record SubscriptionPayment
+        payment = SubscriptionPayment(
             org_id=org.id,
-            invoice_number=inv_num,
-            invoice_uid=f"INV-OFFLINE-{proof.id}",
+            amount=base_price,
+            currency=proof.currency or 'INR',
             plan_name=resolved_name,
             billing_cycle=proof.billing_cycle or cycle,
-            base_amount=base_price,
-            discount_amount=0.0,
+            payment_status='Completed',
+            transaction_id=txn_id,
+            payment_gateway='Dynamic QR',
+            gateway_reference=f"PROOF-{proof.id}",
             gst_percent=18.0,
             gst_amount=gst,
-            total_amount=total_price,
-            currency=proof.currency or 'INR',
-            invoice_status='Paid',
-            invoice_type='subscription',
-            payment_id=payment.id,
-            invoice_date=inv_date,
-            due_date=inv_date,
-            billing_period_start=payment.billing_period_start,
-            billing_period_end=payment.billing_period_end
+            final_amount=total_price,
+            billing_period_start=datetime.now(timezone.utc).replace(tzinfo=None),
+            billing_period_end=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=365 if str(proof.billing_cycle or cycle).lower() in ('yearly', 'annual') else 30)
         )
-        db.session.add(invoice)
+        sub = Subscription.query.filter_by(org_id=org.id).order_by(Subscription.id.desc()).first()
+        if sub:
+            payment.subscription_id = sub.id
+
+        db.session.add(payment)
         db.session.flush()
-        payment.invoice_id = invoice.id
 
-    # Notify Org Admin
-    db.session.add(Notification(
-        org_id=proof.org_id,
-        user_id=proof.user_id,
-        title="Payment Verified — Subscription Activated",
-        message=f"Your payment (UTR: {proof.transaction_id}) has been verified and approved by SuperAdmin! Your plan is now ACTIVE on {proof.plan_name}."
-    ))
+        # Record matching SubscriptionInvoice with Paid status or update existing outstanding invoice(s)
+        from sqlalchemy import or_
+        import re
 
-    db.session.commit()
+        # 1. Try to find the specific invoice referenced in the proof notes
+        linked_inv = None
+        inv_match = re.search(r'\[Invoice:\s*([^\]]+)\]', proof.notes or '')
+        if inv_match:
+            inv_ref = inv_match.group(1).strip()
+            inv_conds = [
+                SubscriptionInvoice.invoice_number == inv_ref,
+                SubscriptionInvoice.invoice_uid == inv_ref
+            ]
+            if inv_ref.isdigit():
+                inv_conds.append(SubscriptionInvoice.id == int(inv_ref))
+            linked_inv = SubscriptionInvoice.query.filter_by(org_id=org.id)\
+                .filter(or_(*inv_conds)).first()
 
-    # Dispatch Payment Approval & Official Tax Invoice PDF Email
-    try:
-        from app.domain.services.email_notification_engine import EmailNotificationEngine
-        EmailNotificationEngine.dispatch_payment_success_invoice_email(
-            org_id=org.id,
-            user_id=proof.user_id,
-            plan_name=proof.plan_name or resolved_name,
-            billing_cycle=proof.billing_cycle or cycle,
-            amount=total_price,
-            transaction_id=proof.transaction_id,
-            payment_date=proof.created_at or datetime.now(timezone.utc).replace(tzinfo=None)
-        )
+        # 2. Find ALL outstanding (unpaid) invoices for this org
+        all_outstanding = SubscriptionInvoice.query.filter_by(org_id=org.id)\
+            .filter(SubscriptionInvoice.invoice_status.in_([
+                'Pending Verification', 'Sent', 'SENT', 'Overdue', 'OVERDUE', 'Issued'
+            ]))\
+            .order_by(SubscriptionInvoice.created_at.desc()).all()
+
+        if all_outstanding:
+            # Mark ALL outstanding invoices as Paid — payment covers org's full balance
+            for idx, inv in enumerate(all_outstanding):
+                inv.invoice_status = 'Paid'
+                if idx == 0:
+                    # Link the primary (most recent) invoice to this payment
+                    inv.payment_id = payment.id
+                    payment.invoice_id = inv.id
+        elif linked_inv:
+            linked_inv.invoice_status = 'Paid'
+            linked_inv.payment_id = payment.id
+            payment.invoice_id = linked_inv.id
+        else:
+            # No existing invoice — create a new Paid invoice
+            inv_date = proof.created_at or datetime.now(timezone.utc).replace(tzinfo=None)
+            inv_num = f"INV/{inv_date.strftime('%Y%m')}/{org.id:04d}-{payment.id:04d}"
+            inv_uid = f"INV-OFFLINE-{proof.id}"
+            if SubscriptionInvoice.query.filter_by(invoice_uid=inv_uid).first():
+                inv_uid = f"INV-OFFLINE-{proof.id}-{secrets.token_hex(3).upper()}"
+            invoice = SubscriptionInvoice(
+                org_id=org.id,
+                subscription_id=sub.id if sub else None,
+                invoice_number=inv_num,
+                invoice_uid=inv_uid,
+                plan_name=resolved_name,
+                billing_cycle=proof.billing_cycle or cycle,
+                base_amount=base_price,
+                discount_amount=0.0,
+                gst_percent=18.0,
+                gst_amount=gst,
+                total_amount=total_price,
+                currency=proof.currency or 'INR',
+                invoice_status='Paid',
+                invoice_type='subscription',
+                payment_id=payment.id,
+                invoice_date=inv_date,
+                due_date=inv_date,
+                billing_period_start=payment.billing_period_start,
+                billing_period_end=payment.billing_period_end
+            )
+            db.session.add(invoice)
+            db.session.flush()
+            payment.invoice_id = invoice.id
+
+
+        # Notify Org Admin
+        if proof.user_id:
+            db.session.add(Notification(
+                org_id=proof.org_id,
+                user_id=proof.user_id,
+                title="Payment Verified — Subscription Activated",
+                message=f"Your payment (UTR: {proof.transaction_id}) has been verified and approved by SuperAdmin! Your plan is now ACTIVE on {resolved_name}."
+            ))
+
+        db.session.commit()
+
+        # Dispatch Payment Approval & Official Tax Invoice PDF Email
+        try:
+            from app.domain.services.email_notification_engine import EmailNotificationEngine
+            EmailNotificationEngine.dispatch_payment_success_invoice_email(
+                org_id=org.id,
+                user_id=proof.user_id,
+                plan_name=proof.plan_name or resolved_name,
+                billing_cycle=proof.billing_cycle or cycle,
+                amount=total_price,
+                transaction_id=proof.transaction_id,
+                payment_date=proof.created_at or datetime.now(timezone.utc).replace(tzinfo=None)
+            )
+        except Exception as e:
+            current_app.logger.warning(f"Failed to dispatch payment invoice email: {e}")
+
+        return jsonify({
+            "status": "success",
+            "message": f"Payment proof approved! Organization {org.name} plan updated to {resolved_name}."
+        }), 200
+
     except Exception as e:
-        print(f"Warning: Failed to dispatch payment invoice email: {e}")
-
-    return jsonify({
-        "status": "success",
-        "message": f"Payment proof approved! Organization {org.name} plan updated to {proof.plan_name}."
-    }), 200
+        db.session.rollback()
+        current_app.logger.error(f"[ApprovePaymentError] {e}", exc_info=True)
+        return jsonify({"status": "error", "message": f"Failed to approve payment: {str(e)}"}), 500
 
 
 @billing_bp.route('/offline-payments/<int:proof_id>/reject', methods=['POST'])
@@ -1330,47 +1406,75 @@ def reject_offline_payment(proof_id):
     data = request.json or {}
     reason = data.get('reason', 'Payment details could not be verified.')
 
-    proof = db.session.get(OfflinePaymentProof, proof_id)
-    if not proof:
-        return jsonify({"message": "Payment record not found"}), 404
-
-    proof.status = 'Rejected'
-    proof.rejection_reason = reason
-    proof.verified_by_id = int(sa_user_id)
-    proof.verified_at = datetime.now(timezone.utc).replace(tzinfo=None)
-
-    # Revert any invoice that was placed into Pending Verification back to Sent
-    inv_pending = SubscriptionInvoice.query.filter_by(org_id=proof.org_id, invoice_status='Pending Verification').all()
-    for inv in inv_pending:
-        inv.invoice_status = 'Sent'
-
-    # Notify Org Admin
-    db.session.add(Notification(
-        org_id=proof.org_id,
-        user_id=proof.user_id,
-        title="Payment Verification Declined",
-        message=f"Your offline payment reference (UTR: {proof.transaction_id}) was declined by SuperAdmin. Reason: {reason}"
-    ))
-
-    db.session.commit()
-
-    # Dispatch Payment Rejection Email with specified reason
     try:
-        from app.domain.services.email_notification_engine import EmailNotificationEngine
-        EmailNotificationEngine.dispatch_payment_rejection_email(
-            org_id=proof.org_id,
-            user_id=proof.user_id,
-            plan_name=proof.plan_name,
-            transaction_id=proof.transaction_id,
-            rejection_reason=reason
-        )
-    except Exception as e:
-        print(f"Warning: Failed to dispatch payment rejection email: {e}")
+        proof = db.session.get(OfflinePaymentProof, proof_id)
+        if not proof:
+            return jsonify({"status": "error", "message": "Payment record not found"}), 404
 
-    return jsonify({
-        "status": "success",
-        "message": "Payment proof rejected."
-    }), 200
+        proof.status = 'Rejected'
+        proof.rejection_reason = reason
+        try:
+            proof.verified_by_id = int(sa_user_id)
+        except (ValueError, TypeError):
+            proof.verified_by_id = None
+        proof.verified_at = datetime.now(timezone.utc).replace(tzinfo=None)
+
+        # Revert specific invoice if noted in proof.notes, else all Pending Verification for org
+        target_inv = None
+        import re
+        from sqlalchemy import or_
+        inv_match = re.search(r'\[Invoice:\s*([^\]]+)\]', proof.notes or '')
+        if inv_match:
+            inv_ref = inv_match.group(1).strip()
+            inv_conds = [
+                SubscriptionInvoice.invoice_number == inv_ref,
+                SubscriptionInvoice.invoice_uid == inv_ref
+            ]
+            if inv_ref.isdigit():
+                inv_conds.append(SubscriptionInvoice.id == int(inv_ref))
+            target_inv = SubscriptionInvoice.query.filter_by(org_id=proof.org_id)\
+                .filter(or_(*inv_conds)).first()
+            if target_inv and target_inv.invoice_status == 'Pending Verification':
+                target_inv.invoice_status = 'Sent'
+
+        if not target_inv:
+            inv_pending = SubscriptionInvoice.query.filter_by(org_id=proof.org_id, invoice_status='Pending Verification').all()
+            for inv in inv_pending:
+                inv.invoice_status = 'Sent'
+
+        # Notify Org Admin
+        if proof.user_id:
+            db.session.add(Notification(
+                org_id=proof.org_id,
+                user_id=proof.user_id,
+                title="Payment Verification Declined",
+                message=f"Your offline payment reference (UTR: {proof.transaction_id}) was declined by SuperAdmin. Reason: {reason}"
+            ))
+
+        db.session.commit()
+
+        # Dispatch Payment Rejection Email with specified reason
+        try:
+            from app.domain.services.email_notification_engine import EmailNotificationEngine
+            EmailNotificationEngine.dispatch_payment_rejection_email(
+                org_id=proof.org_id,
+                user_id=proof.user_id,
+                plan_name=proof.plan_name,
+                transaction_id=proof.transaction_id,
+                rejection_reason=reason
+            )
+        except Exception as e:
+            current_app.logger.warning(f"Failed to dispatch payment rejection email: {e}")
+
+        return jsonify({
+            "status": "success",
+            "message": "Payment proof rejected."
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"[RejectPaymentError] {e}", exc_info=True)
+        return jsonify({"status": "error", "message": f"Failed to reject payment: {str(e)}"}), 500
 
 
 @billing_bp.route('/offline-payments/<int:proof_id>/screenshot', methods=['GET'])

@@ -170,47 +170,52 @@ def get_landing_content():
 @super_admin_required()
 def upload_hero_mockup_image():
     """Upload hero mockup image for the landing page"""
-    if 'file' not in request.files:
-        return jsonify({'status': 'error', 'message': 'No file uploaded'}), 400
-
-    file = request.files['file']
-    if not file or file.filename == '':
-        return jsonify({'status': 'error', 'message': 'No file selected'}), 400
-
-    allowed_exts = {'png', 'jpg', 'jpeg', 'svg', 'webp', 'gif'}
-    ext = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else ''
-    if ext not in allowed_exts:
-        return jsonify({'status': 'error', 'message': 'Invalid file type. Allowed: PNG, JPG, JPEG, SVG, WEBP'}), 400
-
-    fname = f"hero_mockup_{int(time.time())}_{secrets.token_hex(4)}.{ext}"
-    
-    upload_dir = current_app.config.get('UPLOAD_FOLDER', os.path.join(os.getcwd(), 'uploads'))
-    landing_dir = os.path.join(upload_dir, 'landing')
-    os.makedirs(landing_dir, exist_ok=True)
-    save_path = os.path.join(landing_dir, fname)
-    file.save(save_path)
-
     try:
-        frontend_landing_dir = os.path.abspath(os.path.join(current_app.root_path, '..', '..', 'frontend', 'uploads', 'landing'))
-        os.makedirs(frontend_landing_dir, exist_ok=True)
-        shutil.copy(save_path, os.path.join(frontend_landing_dir, fname))
-    except Exception:
-        pass
+        if 'file' not in request.files:
+            return jsonify({'status': 'error', 'message': 'No file uploaded'}), 400
 
-    image_url = f"/uploads/landing/{fname}"
+        file = request.files['file']
+        if not file or file.filename == '':
+            return jsonify({'status': 'error', 'message': 'No file selected'}), 400
 
-    s = PlatformSettings.query.first()
-    if s:
-        cms = dict(s.landing_cms_settings or {})
-        cms['hero_image_url'] = image_url
-        s.landing_cms_settings = cms
-        db.session.commit()
+        allowed_exts = {'png', 'jpg', 'jpeg', 'svg', 'webp', 'gif'}
+        ext = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else ''
+        if ext not in allowed_exts:
+            return jsonify({'status': 'error', 'message': 'Invalid file type. Allowed: PNG, JPG, JPEG, SVG, WEBP'}), 400
 
-    return jsonify({
-        'status': 'success',
-        'message': 'Hero mockup image uploaded successfully!',
-        'image_url': image_url
-    }), 200
+        fname = f"hero_mockup_{int(time.time())}_{secrets.token_hex(4)}.{ext}"
+        
+        upload_dir = current_app.config.get('UPLOAD_FOLDER', os.path.join(os.getcwd(), 'uploads'))
+        landing_dir = os.path.join(upload_dir, 'landing')
+        os.makedirs(landing_dir, exist_ok=True)
+        save_path = os.path.join(landing_dir, fname)
+        file.save(save_path)
+
+        try:
+            frontend_landing_dir = os.path.abspath(os.path.join(current_app.root_path, '..', '..', 'frontend', 'uploads', 'landing'))
+            os.makedirs(frontend_landing_dir, exist_ok=True)
+            shutil.copy(save_path, os.path.join(frontend_landing_dir, fname))
+        except Exception as copy_err:
+            logger.warning(f"[UploadHeroMockup] Frontend mirror copy failed: {copy_err}")
+
+        image_url = f"/uploads/landing/{fname}"
+
+        s = PlatformSettings.query.first()
+        if s:
+            cms = dict(s.landing_cms_settings or {})
+            cms['hero_image_url'] = image_url
+            s.landing_cms_settings = cms
+            db.session.commit()
+
+        return jsonify({
+            'status': 'success',
+            'message': 'Hero mockup image uploaded successfully!',
+            'image_url': image_url
+        }), 200
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"[UploadHeroMockup] Exception during image upload: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': f"Server error: {str(e)}"}), 500
 
 def log_admin_action(action, target_type=None, target_id=None, details=None):
     admin_id = get_jwt_identity()
@@ -2547,6 +2552,48 @@ def _save_category(settings, category: str, incoming: dict):
     from sqlalchemy.orm.attributes import flag_modified
     flag_modified(settings, category)
 
+def _save_data_url_to_storage(data_url, prefix="branding"):
+    """Decodes a base64 Data URL and saves it as a real file via storage provider."""
+    if not data_url or not isinstance(data_url, str) or not data_url.startswith("data:image/"):
+        return data_url
+    try:
+        import base64
+        import io
+        import time
+        import os
+        from flask import current_app
+        from app.infrastructure.storage import storage
+        header, encoded = data_url.split(",", 1)
+        mime = header.split(";")[0].split(":")[1]
+        ext = mime.split("/")[1] if "/" in mime else "png"
+        if ext == "svg+xml":
+            ext = "svg"
+        elif ext in ("x-icon", "vnd.microsoft.icon"):
+            ext = "ico"
+        elif ext == "jpeg":
+            ext = "jpg"
+        raw_bytes = base64.b64decode(encoded)
+        filename = f"{prefix}_{int(time.time())}.{ext}"
+        res = storage.save_file(io.BytesIO(raw_bytes), filename=filename, subfolder="branding", content_type=mime)
+        relative_url = res.get('url') or f"/uploads/branding/{filename}"
+
+        # Copy to frontend folder if exists
+        try:
+            frontend_dir = os.path.abspath(os.path.join(current_app.root_path, '..', '..', 'frontend', 'uploads', 'branding'))
+            if os.path.isdir(os.path.dirname(os.path.dirname(frontend_dir))):
+                os.makedirs(frontend_dir, exist_ok=True)
+                local_src = res.get('local_path')
+                if local_src and os.path.isfile(local_src):
+                    import shutil
+                    shutil.copy(local_src, os.path.join(frontend_dir, os.path.basename(local_src)))
+        except Exception:
+            pass
+
+        return relative_url
+    except Exception as e:
+        logger.warning(f"[Storage] Could not convert data URL to file: {e}")
+        return None
+
 def _calc_security_score(s: PlatformSettings) -> int:
     """Calculate a 0-100 security score based on configured policies."""
     score = 0
@@ -2969,85 +3016,113 @@ def platform_settings():
         })
 
     # PUT — update settings
-    user_id = get_jwt_identity()
-    user = db.session.get(User, int(user_id))
-    sub_role = _get_sa_sub_role(user)
-    if sub_role != 'Owner' and sub_role != 'Platform Operations':
-        return jsonify({
-            "status": "error",
-            "message": f"Your sub-role '{sub_role}' does not have permission to modify platform settings.",
-            "error_code": "SUB_ROLE_WRITE_DENIED"
-        }), 403
+    try:
+        user_id = get_jwt_identity()
+        user = db.session.get(User, int(user_id))
+        sub_role = _get_sa_sub_role(user)
+        if sub_role != 'Owner' and sub_role != 'Platform Operations':
+            return jsonify({
+                "status": "error",
+                "message": f"Your sub-role '{sub_role}' does not have permission to modify platform settings.",
+                "error_code": "SUB_ROLE_WRITE_DENIED"
+            }), 403
 
-    data = request.json or {}
+        data = request.json or {}
 
-    # Legacy scalar fields
-    if 'site_name' in data: s.site_name = data['site_name']
-    if 'maintenance_mode' in data: s.maintenance_mode = bool(data['maintenance_mode'])
-    if 'registration_open' in data: s.registration_open = bool(data['registration_open'])
-    if 'require_email_otp' in data: s.require_email_otp = bool(data['require_email_otp'])
-    if 'require_phone_otp' in data: s.require_phone_otp = bool(data['require_phone_otp'])
-    if 'global_notification' in data: s.global_notification = data['global_notification']
-    if 'support_email' in data: s.support_email = data['support_email']
-    if 'default_plan' in data: s.default_plan = data['default_plan']
-    if 'trial_period_days' in data: s.trial_period_days = int(data.get('trial_period_days', 14))
-    if 'max_auto_trial_extensions' in data: s.max_auto_trial_extensions = int(data.get('max_auto_trial_extensions', 2))
-    if 'payment_gateway_mode' in data: s.payment_gateway_mode = data['payment_gateway_mode']
-    if 'support_phone' in data: s.support_phone = data['support_phone']
-    if 'support_website' in data: s.support_website = data['support_website']
-    if 'company_address' in data: s.company_address = data['company_address']
-    if 'timezone' in data: s.timezone = data['timezone']
-    if 'default_language' in data: s.default_language = data['default_language']
-    if 'date_format' in data: s.date_format = data['date_format']
-    if 'time_format' in data: s.time_format = data['time_format']
-    if 'currency' in data: s.currency = data['currency']
+        # Legacy scalar fields
+        if 'site_name' in data: s.site_name = data['site_name']
+        if 'maintenance_mode' in data: s.maintenance_mode = bool(data['maintenance_mode'])
+        if 'registration_open' in data: s.registration_open = bool(data['registration_open'])
+        if 'require_email_otp' in data: s.require_email_otp = bool(data['require_email_otp'])
+        if 'require_phone_otp' in data: s.require_phone_otp = bool(data['require_phone_otp'])
+        if 'global_notification' in data: s.global_notification = data['global_notification']
+        if 'support_email' in data: s.support_email = data['support_email']
+        if 'default_plan' in data: s.default_plan = data['default_plan']
+        if 'trial_period_days' in data: s.trial_period_days = int(data.get('trial_period_days', 14))
+        if 'max_auto_trial_extensions' in data: s.max_auto_trial_extensions = int(data.get('max_auto_trial_extensions', 2))
+        if 'payment_gateway_mode' in data: s.payment_gateway_mode = data['payment_gateway_mode']
+        if 'support_phone' in data: s.support_phone = data['support_phone']
+        if 'support_website' in data: s.support_website = data['support_website']
+        if 'company_address' in data: s.company_address = data['company_address']
+        if 'timezone' in data: s.timezone = data['timezone']
+        if 'default_language' in data: s.default_language = data['default_language']
+        if 'date_format' in data: s.date_format = data['date_format']
+        if 'time_format' in data: s.time_format = data['time_format']
+        if 'currency' in data: s.currency = data['currency']
 
-    # JSON category blobs — merge carefully
-    for cat in ['branding_settings', 'localization_settings', 'authentication_settings',
-                'organizations_settings', 'billing_settings', 'modules_settings',
-                'security_settings', 'compliance_settings', 'notification_settings', 'email_settings',
-                'sms_settings', 'push_settings', 'storage_settings',
-                'compliance_settings', 'api_settings', 'webhook_settings',
-                'integrations_settings', 'ai_settings', 'feature_flags',
-                'developer_settings', 'audit_logs_settings', 'system_health_settings', 'about_settings',
-                'maintenance_settings', 'system_settings', 'landing_cms_settings']:
-        if cat in data:
-            _save_category(s, cat, data[cat])
+        # Pre-process branding_settings to convert any base64 data URLs to clean file URLs
+        if 'branding_settings' in data and isinstance(data['branding_settings'], dict):
+            b_set = data['branding_settings']
+            if isinstance(b_set.get('assets'), dict):
+                for k, val in list(b_set['assets'].items()):
+                    if isinstance(val, str) and val.startswith("data:image/"):
+                        clean_url = _save_data_url_to_storage(val, prefix=k.replace('-', '_'))
+                        if clean_url:
+                            b_set['assets'][k] = clean_url
+                        else:
+                            b_set['assets'].pop(k, None)
 
-    if 'branding_settings' in data and isinstance(data['branding_settings'], dict):
-        b_set = data['branding_settings']
-        l_url = b_set.get('logo_url') or (b_set.get('assets', {}).get('main-logo') if isinstance(b_set.get('assets'), dict) else None)
+            for url_field in ('logo_url', 'dark_logo_url', 'light_logo_url', 'favicon_url'):
+                if isinstance(b_set.get(url_field), str) and b_set[url_field].startswith("data:image/"):
+                    clean_url = _save_data_url_to_storage(b_set[url_field], prefix=url_field)
+                    if clean_url:
+                        b_set[url_field] = clean_url
+                    else:
+                        b_set.pop(url_field, None)
+
+        # JSON category blobs — merge carefully
+        for cat in ['branding_settings', 'localization_settings', 'authentication_settings',
+                    'organizations_settings', 'billing_settings', 'modules_settings',
+                    'security_settings', 'compliance_settings', 'notification_settings', 'email_settings',
+                    'sms_settings', 'push_settings', 'storage_settings',
+                    'compliance_settings', 'api_settings', 'webhook_settings',
+                    'integrations_settings', 'ai_settings', 'feature_flags',
+                    'developer_settings', 'audit_logs_settings', 'system_health_settings', 'about_settings',
+                    'maintenance_settings', 'system_settings', 'landing_cms_settings']:
+            if cat in data:
+                _save_category(s, cat, data[cat])
+
+        if 'branding_settings' in data and isinstance(data['branding_settings'], dict):
+            b_set = data['branding_settings']
+            l_url = b_set.get('logo_url') or (b_set.get('assets', {}).get('main-logo') if isinstance(b_set.get('assets'), dict) else None)
+            fav_url = b_set.get('favicon_url') or (b_set.get('assets', {}).get('favicon') if isinstance(b_set.get('assets'), dict) else None)
+            try:
+                from app.infrastructure.database.models.models import BrandingAssetsConfig
+                from app.domain.services.document_branding_service import DocumentBrandingService
+                assets_cfg = BrandingAssetsConfig.query.filter_by(org_id=None).first()
+                if not assets_cfg:
+                    assets_cfg = BrandingAssetsConfig(org_id=None)
+                    db.session.add(assets_cfg)
+                if l_url:
+                    assets_cfg.logo_url = l_url
+                    assets_cfg.print_logo_url = l_url
+                    assets_cfg.pdf_logo_url = l_url
+                if fav_url:
+                    assets_cfg.favicon_url = fav_url
+                DocumentBrandingService.invalidate_cache()
+            except Exception as b_err:
+                logger.warning(f"Failed to sync BrandingAssetsConfig: {b_err}")
+
+        # Sync maintenance_mode from maintenance_settings if present
+        maint = _get_category(s, 'maintenance_settings')
+        if 'maintenance_mode' not in data and 'maintenance_settings' in data:
+            s.maintenance_mode = data['maintenance_settings'].get('enabled', s.maintenance_mode)
+
+        db.session.commit()
         try:
-            from app.infrastructure.database.models.models import BrandingAssetsConfig
-            from app.domain.services.document_branding_service import DocumentBrandingService
-            assets_cfg = BrandingAssetsConfig.query.filter_by(org_id=None).first()
-            if not assets_cfg:
-                assets_cfg = BrandingAssetsConfig(org_id=None)
-                db.session.add(assets_cfg)
-            if l_url:
-                assets_cfg.logo_url = l_url
-                assets_cfg.print_logo_url = l_url
-                assets_cfg.pdf_logo_url = l_url
-            DocumentBrandingService.invalidate_cache()
+            from app.domain.services.cache_service import CacheService
+            CacheService.invalidate_global_platform_settings()
         except Exception:
             pass
 
-    # Sync maintenance_mode from maintenance_settings if present
-    maint = _get_category(s, 'maintenance_settings')
-    if 'maintenance_mode' not in data and 'maintenance_settings' in data:
-        s.maintenance_mode = data['maintenance_settings'].get('enabled', s.maintenance_mode)
+        category_name = data.get('_category', 'Platform Settings')
+        log_admin_action(f"Updated {category_name}", target_type="SystemSetting", details=json.dumps(list(data.keys())))
 
-    db.session.commit()
-    try:
-        from app.domain.services.cache_service import CacheService
-        CacheService.invalidate_global_platform_settings()
-    except Exception:
-        pass
-
-    category_name = data.get('_category', 'Platform Settings')
-    log_admin_action(f"Updated {category_name}", target_type="SystemSetting", details=json.dumps(list(data.keys())))
-
-    return jsonify({"status": "success", "message": f"{category_name} updated successfully"})
+        return jsonify({"status": "success", "message": f"{category_name} updated successfully"})
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"[PlatformSettings] Error updating settings: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": f"Failed to save settings: {str(e)}"}), 500
 
 
 # ─────────────────────────────────────────────────────────────────────────────

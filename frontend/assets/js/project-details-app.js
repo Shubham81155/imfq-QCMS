@@ -2946,6 +2946,195 @@ const ProjectApp = {
         };
     },
 
+    formatParetoAxisLabel(str, maxCharsPerLine = 15, maxLines = 2) {
+        if (!str || typeof str !== 'string') return '';
+        const words = str.trim().split(/\s+/);
+        if (words.length === 1) {
+            return words[0].length > maxCharsPerLine ? words[0].substring(0, maxCharsPerLine - 2) + '…' : words[0];
+        }
+        const lines = [];
+        let cur = '';
+        for (let i = 0; i < words.length; i++) {
+            const w = words[i];
+            if (!cur) {
+                cur = w;
+            } else if ((cur + ' ' + w).length <= maxCharsPerLine) {
+                cur += ' ' + w;
+            } else {
+                lines.push(cur);
+                cur = w;
+                if (lines.length === maxLines - 1) {
+                    const rest = words.slice(i).join(' ');
+                    if (rest.length > maxCharsPerLine) {
+                        lines.push(rest.substring(0, maxCharsPerLine - 2).trim() + '…');
+                    } else {
+                        lines.push(rest);
+                    }
+                    cur = '';
+                    break;
+                }
+            }
+        }
+        if (cur) {
+            if (lines.length >= maxLines && cur.length > maxCharsPerLine) {
+                cur = cur.substring(0, maxCharsPerLine - 2).trim() + '…';
+            }
+            lines.push(cur);
+        }
+        return lines.length === 1 ? lines[0] : lines;
+    },
+
+    createParetoChart(canvasEl, config) {
+        if (!canvasEl) return null;
+        const {
+            rawLabels = [],
+            values = [],
+            barLabel = 'Frequency',
+            barColor = 'rgba(239, 68, 68, 0.72)',
+            borderColor = 'rgb(239, 68, 68)',
+            lineColor = 'rgb(249, 115, 22)',
+            pointColor = 'rgb(249, 115, 22)',
+            existingInstance = null
+        } = config;
+
+        if (existingInstance && typeof existingInstance.destroy === 'function') {
+            existingInstance.destroy();
+        }
+
+        const total = values.reduce((a, b) => a + b, 0);
+        let cum = 0;
+        const cumPerc = values.map(v => {
+            cum += v;
+            return total > 0 ? parseFloat(((cum / total) * 100).toFixed(1)) : 0;
+        });
+
+        const formattedLabels = rawLabels.map(l => this.formatParetoAxisLabel(l));
+        const maxVal = Math.max(...values, 10);
+        const ySuggestedMax = Math.ceil(maxVal * 1.15);
+
+        const ctx = canvasEl.getContext('2d');
+        return new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: formattedLabels,
+                datasets: [
+                    {
+                        label: barLabel,
+                        data: values,
+                        backgroundColor: barColor,
+                        borderColor: borderColor,
+                        borderWidth: 1.5,
+                        borderRadius: 4,
+                        maxBarThickness: 46,
+                        categoryPercentage: 0.75,
+                        barPercentage: 0.85,
+                        yAxisID: 'y'
+                    },
+                    {
+                        label: 'Cumulative %',
+                        data: cumPerc,
+                        type: 'line',
+                        borderColor: lineColor,
+                        backgroundColor: lineColor.includes('rgb(') 
+                            ? lineColor.replace('rgb(', 'rgba(').replace(')', ', 0.12)')
+                            : 'rgba(249, 115, 22, 0.12)',
+                        borderWidth: 2.2,
+                        pointBackgroundColor: pointColor,
+                        pointBorderColor: '#ffffff',
+                        pointBorderWidth: 1.5,
+                        pointRadius: 4.5,
+                        pointHoverRadius: 6.5,
+                        tension: 0.15,
+                        yAxisID: 'y1'
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                layout: {
+                    padding: { top: 6, bottom: 4, left: 4, right: 6 }
+                },
+                plugins: {
+                    legend: this.getQcLegendConfig(),
+                    tooltip: {
+                        backgroundColor: 'rgba(15, 23, 42, 0.94)',
+                        titleFont: { size: 11, weight: 'bold', family: "'Plus Jakarta Sans', sans-serif" },
+                        bodyFont: { size: 11, family: "'Plus Jakarta Sans', sans-serif" },
+                        padding: 10,
+                        cornerRadius: 6,
+                        displayColors: true,
+                        callbacks: {
+                            title: function(items) {
+                                if (!items.length) return '';
+                                const idx = items[0].dataIndex;
+                                return rawLabels[idx] || items[0].label;
+                            },
+                            label: function(ctx) {
+                                if (ctx.dataset.yAxisID === 'y1') {
+                                    return ` Cumulative: ${ctx.parsed.y}%`;
+                                }
+                                const lbl = ctx.dataset.label || 'Value';
+                                return ` ${lbl}: ${ctx.parsed.y}`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        ticks: {
+                            autoSkip: false,
+                            maxRotation: 0,
+                            minRotation: 0,
+                            font: { size: 9.5, family: "'Plus Jakarta Sans', sans-serif", weight: '500' },
+                            color: '#475569',
+                            padding: 6
+                        },
+                        grid: { display: false }
+                    },
+                    y: {
+                        type: 'linear',
+                        display: true,
+                        position: 'left',
+                        beginAtZero: true,
+                        suggestedMax: ySuggestedMax,
+                        title: {
+                            display: true,
+                            text: barLabel,
+                            font: { size: 10, weight: 'bold', family: "'Plus Jakarta Sans', sans-serif" },
+                            color: '#64748b'
+                        },
+                        ticks: {
+                            font: { size: 9.5, family: "'Plus Jakarta Sans', sans-serif" },
+                            color: '#64748b'
+                        },
+                        grid: { color: 'rgba(226, 232, 240, 0.7)' }
+                    },
+                    y1: {
+                        type: 'linear',
+                        display: true,
+                        position: 'right',
+                        min: 0,
+                        max: 100,
+                        title: {
+                            display: true,
+                            text: 'Cum. %',
+                            font: { size: 10, weight: 'bold', family: "'Plus Jakarta Sans', sans-serif" },
+                            color: '#64748b'
+                        },
+                        ticks: {
+                            stepSize: 20,
+                            callback: v => v + '%',
+                            font: { size: 9.5, family: "'Plus Jakarta Sans', sans-serif" },
+                            color: '#64748b'
+                        },
+                        grid: { display: false }
+                    }
+                }
+            }
+        });
+    },
+
     extractStage3SuspectCauses(s2, s3, s4, workflows, data) {
         s2 = s2 || {};
         s3 = s3 || {};
@@ -3147,51 +3336,16 @@ const ProjectApp = {
             const sorted = Object.entries(counts).sort((a,b) => b[1] - a[1]);
             const labels = sorted.map(x => x[0]);
             const values = sorted.map(x => x[1]);
-            const total = values.reduce((a,b) => a+b, 0);
-            let cum = 0;
-            const cumPerc = values.map(v => { cum += v; return total > 0 ? ((cum/total)*100).toFixed(1) : 0; });
 
-            if (this._execS2ParetoChart) {
-                this._execS2ParetoChart.destroy();
-                this._execS2ParetoChart = null;
-            }
-            this._execS2ParetoChart = new Chart(s2Canvas.getContext('2d'), {
-                type: 'bar',
-                data: {
-                    labels: labels,
-                    datasets: [
-                        {
-                            label: 'Frequency',
-                            data: values,
-                            backgroundColor: 'rgba(239, 68, 68, 0.65)',
-                            borderColor: 'rgb(239, 68, 68)',
-                            borderWidth: 1.5,
-                            yAxisID: 'y'
-                        },
-                        {
-                            label: 'Cumulative %',
-                            data: cumPerc,
-                            type: 'line',
-                            borderColor: 'rgb(249, 115, 22)',
-                            backgroundColor: 'rgba(249, 115, 22, 0.1)',
-                            borderWidth: 2,
-                            pointBackgroundColor: 'rgb(249, 115, 22)',
-                            yAxisID: 'y1',
-                            tension: 0.1
-                        }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: this.getQcLegendConfig()
-                    },
-                    scales: {
-                        y: { type: 'linear', display: true, position: 'left', beginAtZero: true },
-                        y1: { type: 'linear', display: true, position: 'right', min: 0, max: 100 }
-                    }
-                }
+            this._execS2ParetoChart = this.createParetoChart(s2Canvas, {
+                rawLabels: labels,
+                values: values,
+                barLabel: 'Frequency',
+                barColor: 'rgba(239, 68, 68, 0.72)',
+                borderColor: 'rgb(239, 68, 68)',
+                lineColor: 'rgb(249, 115, 22)',
+                pointColor: 'rgb(249, 115, 22)',
+                existingInstance: this._execS2ParetoChart
             });
         } else if (s2Canvas) {
             s2Canvas.parentNode.innerHTML = `<div class="text-xs text-muted text-center py-5">No observations collected in Stage 2</div>`;
@@ -3205,51 +3359,16 @@ const ProjectApp = {
             if (s3Causes.length > 0) {
                 const labels = s3Causes.map(x => x.cause);
                 const values = s3Causes.map(x => x.total);
-                const total = values.reduce((a,b) => a+b, 0);
-                let cum = 0;
-                const cumPerc = values.map(v => { cum += v; return total > 0 ? ((cum/total)*100).toFixed(1) : 0; });
 
-                if (this._execS3ParetoChart) {
-                    this._execS3ParetoChart.destroy();
-                    this._execS3ParetoChart = null;
-                }
-                this._execS3ParetoChart = new Chart(s3Canvas.getContext('2d'), {
-                    type: 'bar',
-                    data: {
-                        labels: labels,
-                        datasets: [
-                            {
-                                label: 'Score',
-                                data: values,
-                                backgroundColor: 'rgba(59, 130, 246, 0.65)',
-                                borderColor: 'rgb(59, 130, 246)',
-                                borderWidth: 1.5,
-                                yAxisID: 'y'
-                            },
-                            {
-                                label: 'Cumulative %',
-                                data: cumPerc,
-                                type: 'line',
-                                borderColor: 'rgb(16, 185, 129)',
-                                backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                                borderWidth: 2,
-                                pointBackgroundColor: 'rgb(16, 185, 129)',
-                                yAxisID: 'y1',
-                                tension: 0.1
-                            }
-                        ]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: this.getQcLegendConfig()
-                        },
-                        scales: {
-                            y: { type: 'linear', display: true, position: 'left', beginAtZero: true },
-                            y1: { type: 'linear', display: true, position: 'right', min: 0, max: 100 }
-                        }
-                    }
+                this._execS3ParetoChart = this.createParetoChart(s3Canvas, {
+                    rawLabels: labels,
+                    values: values,
+                    barLabel: 'Score',
+                    barColor: 'rgba(59, 130, 246, 0.72)',
+                    borderColor: 'rgb(37, 99, 235)',
+                    lineColor: 'rgb(16, 185, 129)',
+                    pointColor: 'rgb(16, 185, 129)',
+                    existingInstance: this._execS3ParetoChart
                 });
             } else {
                 s3Canvas.parentNode.innerHTML = `<div class="text-xs text-muted text-center py-5">No suspect causes identified in Stage 3</div>`;
@@ -3592,30 +3711,19 @@ const ProjectApp = {
             const labels = sorted.map(x => x[0]);
             const values = sorted.map(x => x[1]);
             const total = values.reduce((a,b) => a+b, 0);
-            let cum = 0;
-            const cumPerc = values.map(v => { cum += v; return total > 0 ? ((cum/total)*100).toFixed(1) : 0; });
 
-            if (window.qcS2ParetoChartInstance) window.qcS2ParetoChartInstance.destroy();
-            window.qcS2ParetoChartInstance = new Chart(p2Canvas.getContext('2d'), {
-                type: 'bar',
-                data: {
-                    labels: labels,
-                    datasets: [
-                        { label: 'Frequency', data: values, backgroundColor: 'rgba(239, 68, 68, 0.65)', borderColor: 'rgb(239, 68, 68)', borderWidth: 1.5, yAxisID: 'y' },
-                        { label: 'Cumulative %', data: cumPerc, type: 'line', borderColor: 'rgb(249, 115, 22)', backgroundColor: 'rgba(249, 115, 22, 0.1)', borderWidth: 2, pointBackgroundColor: 'rgb(249, 115, 22)', yAxisID: 'y1', tension: 0.1 }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: this.getQcLegendConfig()
-                    },
-                    scales: {
-                        y: { type: 'linear', display: true, position: 'left', beginAtZero: true },
-                        y1: { type: 'linear', display: true, position: 'right', min: 0, max: 100 }
-                    }
-                }
+            const s2Badge = document.getElementById('qc_s2_pareto_badge');
+            if (s2Badge) s2Badge.textContent = `${total} Total`;
+
+            window.qcS2ParetoChartInstance = this.createParetoChart(p2Canvas, {
+                rawLabels: labels,
+                values: values,
+                barLabel: 'Frequency',
+                barColor: 'rgba(239, 68, 68, 0.72)',
+                borderColor: 'rgb(239, 68, 68)',
+                lineColor: 'rgb(249, 115, 22)',
+                pointColor: 'rgb(249, 115, 22)',
+                existingInstance: window.qcS2ParetoChartInstance
             });
         } else if (p2Container) {
             if (window.qcS2ParetoChartInstance) {
@@ -3643,31 +3751,19 @@ const ProjectApp = {
         if (p3Canvas && s3Causes.length > 0) {
             const labels = s3Causes.map(x => x.cause);
             const values = s3Causes.map(x => x.total);
-            const total = values.reduce((a,b) => a+b, 0);
-            let cum = 0;
-            const cumPerc = values.map(v => { cum += v; return total > 0 ? ((cum/total)*100).toFixed(1) : 0; });
 
-            if (window.qcS3ParetoChartInstance) window.qcS3ParetoChartInstance.destroy();
-            window.qcS3ParetoChartInstance = new Chart(p3Canvas.getContext('2d'), {
-                type: 'bar',
-                data: {
-                    labels: labels,
-                    datasets: [
-                        { label: 'Score', data: values, backgroundColor: 'rgba(59, 130, 246, 0.65)', borderColor: 'rgb(59, 130, 246)', borderWidth: 1.5, yAxisID: 'y' },
-                        { label: 'Cumulative %', data: cumPerc, type: 'line', borderColor: 'rgb(16, 185, 129)', backgroundColor: 'rgba(16, 185, 129, 0.1)', borderWidth: 2, pointBackgroundColor: 'rgb(16, 185, 129)', yAxisID: 'y1', tension: 0.1 }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: this.getQcLegendConfig()
-                    },
-                    scales: {
-                        y: { type: 'linear', display: true, position: 'left', beginAtZero: true },
-                        y1: { type: 'linear', display: true, position: 'right', min: 0, max: 100 }
-                    }
-                }
+            const s3Badge = document.getElementById('qc_s3_pareto_badge');
+            if (s3Badge) s3Badge.textContent = `${s3Causes.length} Causes Ranked`;
+
+            window.qcS3ParetoChartInstance = this.createParetoChart(p3Canvas, {
+                rawLabels: labels,
+                values: values,
+                barLabel: 'Score',
+                barColor: 'rgba(59, 130, 246, 0.72)',
+                borderColor: 'rgb(37, 99, 235)',
+                lineColor: 'rgb(16, 185, 129)',
+                pointColor: 'rgb(16, 185, 129)',
+                existingInstance: window.qcS3ParetoChartInstance
             });
         }
 

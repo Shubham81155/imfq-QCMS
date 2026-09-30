@@ -973,8 +973,29 @@ const PlatformSettings = {
     async uploadHeroImage(input) {
         if (!input || !input.files || input.files.length === 0) return;
         const file = input.files[0];
-        const formData = new FormData();
-        formData.append('file', file);
+
+        // 1. Client-side Validation
+        if (file.size > 20 * 1024 * 1024) {
+            if (window.OctaQube && OctaQube.toast) {
+                OctaQube.toast('Image file exceeds 20MB limit. Please select a smaller image.', 'error');
+            } else {
+                alert('Image file exceeds 20MB limit.');
+            }
+            input.value = '';
+            return;
+        }
+
+        const validExts = ['png', 'jpg', 'jpeg', 'webp', 'svg', 'gif'];
+        const ext = file.name.split('.').pop().toLowerCase();
+        if (!validExts.includes(ext)) {
+            if (window.OctaQube && OctaQube.toast) {
+                OctaQube.toast('Invalid image format. Allowed formats: PNG, JPG, JPEG, WEBP, SVG.', 'error');
+            } else {
+                alert('Invalid image format. Allowed formats: PNG, JPG, JPEG, WEBP, SVG.');
+            }
+            input.value = '';
+            return;
+        }
 
         const label = document.querySelector('label[for="ps-cms-hero-file-input"]');
         const originalText = label ? label.innerHTML : '';
@@ -984,13 +1005,38 @@ const PlatformSettings = {
         }
 
         try {
+            const formData = new FormData();
+            formData.append('file', file);
+
             const token = (window.api && window.api.token) || sessionStorage.getItem('token') || localStorage.getItem('token') || localStorage.getItem('access_token') || '';
+            const headers = {};
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+            }
+
             const res = await fetch('/api/super-admin/landing-cms/upload-hero-image', {
                 method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` },
-                body: formData
+                headers: headers,
+                body: formData,
+                credentials: 'same-origin'
             });
-            const data = await res.json();
+
+            let data = {};
+            const contentType = res.headers.get('content-type') || '';
+            if (contentType.includes('application/json')) {
+                data = await res.json().catch(() => ({}));
+            } else {
+                if (res.status === 413) {
+                    throw new Error('Image file is too large for the server. Please upload an image under 10 MB.');
+                } else if (res.status === 401 || res.status === 403) {
+                    throw new Error('Your session has expired or you do not have permission. Please log in again.');
+                } else if (res.status === 404) {
+                    throw new Error('Upload service endpoint not found on the server.');
+                } else {
+                    throw new Error(`Upload failed with server response (HTTP ${res.status}).`);
+                }
+            }
+
             if (res.ok && data.image_url) {
                 this._val('ps-cms-hero-image-url', data.image_url);
                 this.previewHeroImageUrl(data.image_url);
@@ -998,7 +1044,7 @@ const PlatformSettings = {
                 const iframe = document.getElementById('ps-cms-iframe');
                 if (iframe) iframe.src = '/index.html?t=' + Date.now();
             } else {
-                throw new Error(data.message || 'Upload failed');
+                throw new Error(data.message || data.msg || 'Upload failed');
             }
         } catch (e) {
             if (window.OctaQube) OctaQube.toast(e.message || 'Error uploading hero image', 'error');
@@ -2165,10 +2211,12 @@ const PlatformSettings = {
     uploadAsset(type) {
         const fileInput = document.createElement('input');
         fileInput.type = 'file';
-        fileInput.accept = 'image/*';
-        fileInput.onchange = (e) => {
+        fileInput.accept = type === 'favicon' ? 'image/png,image/x-icon,image/vnd.microsoft.icon,image/svg+xml,image/jpeg,image/webp' : 'image/*';
+        fileInput.onchange = async (e) => {
             const file = e.target.files[0];
             if (!file) return;
+
+            // 1. Immediate visual preview in DOM
             const reader = new FileReader();
             reader.onload = (event) => {
                 const dataUrl = event.target.result;
@@ -2178,13 +2226,7 @@ const PlatformSettings = {
                     container.innerHTML = `<img src="${dataUrl}" style="max-height:60px; max-width:100%; object-fit:contain;" alt="${type}">`;
                 }
 
-                // Persist immediately in localStorage
-                const assets = JSON.parse(localStorage.getItem('octaqube_brand_assets') || '{}');
-                assets[type] = dataUrl;
-                localStorage.setItem('octaqube_brand_assets', JSON.stringify(assets));
-
                 if (type === 'main-logo' || type === 'logo' || type === 'dark-logo') {
-                    // Sync with Doc Identity & Branding preview elements
                     const diLogo = document.getElementById('sa-di-logo-preview');
                     const diPlaceholder = document.getElementById('sa-di-logo-placeholder');
                     const diBadge = document.getElementById('sa-di-logo-status-badge');
@@ -2201,98 +2243,84 @@ const PlatformSettings = {
                         diBadge.textContent = 'Custom Logo Active';
                         diBadge.className = 'badge bg-success-subtle text-success text-xxs';
                     }
-
-                    // Update all sidebar brand icons / images immediately
-                    document.querySelectorAll('.sidebar-brand').forEach(sb => {
-                        let img = sb.querySelector('img');
-                        if (img) {
-                            img.src = dataUrl;
-                        } else {
-                            const iconBox = sb.querySelector('.brand-icon');
-                            if (iconBox) {
-                                const newImg = document.createElement('img');
-                                newImg.src = dataUrl;
-                                newImg.alt = 'Logo';
-                                newImg.style.cssText = 'width: 32px; height: 32px; object-fit: contain; border-radius: 8px;';
-                                iconBox.replaceWith(newImg);
-                            }
-                        }
-                    });
-                    document.querySelectorAll('.navbar-brand img, .brand-logo img').forEach(img => {
+                    document.querySelectorAll('.sidebar-brand img, .navbar-brand img, .brand-logo img').forEach(img => {
                         img.src = dataUrl;
                     });
-                    try {
-                        const uStr = sessionStorage.getItem('user') || localStorage.getItem('user');
-                        if (uStr) {
-                            const uObj = JSON.parse(uStr);
-                            uObj.platform_logo_url = dataUrl;
-                            const uJson = JSON.stringify(sanitizeUserForStorage(uObj));
-                            if (sessionStorage.getItem('user')) sessionStorage.setItem('user', uJson);
-                            if (localStorage.getItem('user')) localStorage.setItem('user', uJson);
-                            if (window.OctaQube && OctaQube.user) OctaQube.user.platform_logo_url = dataUrl;
-                        }
-                    } catch (_) {}
                 } else if (type === 'favicon') {
-                    // Update tab favicon dynamically across browsers
                     document.querySelectorAll("link[rel*='icon']").forEach(el => el.remove());
                     const linkIcon = document.createElement('link');
                     linkIcon.rel = 'icon';
                     linkIcon.type = 'image/png';
                     linkIcon.href = dataUrl;
                     document.head.appendChild(linkIcon);
-
-                    const linkShortcut = document.createElement('link');
-                    linkShortcut.rel = 'shortcut icon';
-                    linkShortcut.type = 'image/x-icon';
-                    linkShortcut.href = dataUrl;
-                    document.head.appendChild(linkShortcut);
-
-                    try {
-                        const uStr = sessionStorage.getItem('user') || localStorage.getItem('user');
-                        if (uStr) {
-                            const uObj = JSON.parse(uStr);
-                            uObj.platform_favicon_url = dataUrl;
-                            const uJson = JSON.stringify(sanitizeUserForStorage(uObj));
-                            if (sessionStorage.getItem('user')) sessionStorage.setItem('user', uJson);
-                            if (localStorage.getItem('user')) localStorage.setItem('user', uJson);
-                            if (window.OctaQube && OctaQube.user) OctaQube.user.platform_favicon_url = dataUrl;
-                        }
-                    } catch (_) {}
                 }
+            };
+            reader.readAsDataURL(file);
+
+            // 2. Upload actual file to server storage
+            try {
+                const fd = new FormData();
+                fd.append('logo_file', file);
+                fd.append('asset_type', type);
+                const token = (window.api && window.api.token) || localStorage.getItem('token') || sessionStorage.getItem('token');
+
+                const response = await fetch('/api/document-identity/upload-logo', {
+                    method: 'POST',
+                    headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+                    body: fd
+                });
+
+                const res = await response.json();
+                if (!response.ok || res.status !== 'success') {
+                    throw new Error(res.message || 'File upload failed');
+                }
+
+                const serverUrl = res.asset_url || res.logo_url;
+                if (!serverUrl) {
+                    throw new Error('Server did not return a valid asset URL');
+                }
+
+                // 3. Persist clean server URL in localStorage
+                const assets = JSON.parse(localStorage.getItem('octaqube_brand_assets') || '{}');
+                assets[type] = serverUrl;
+                if (type === 'main-logo' || type === 'logo') {
+                    assets['main-logo'] = serverUrl;
+                    assets['logo'] = serverUrl;
+                }
+                localStorage.setItem('octaqube_brand_assets', JSON.stringify(assets));
+
+                // 4. Update session storage with clean server URL
+                try {
+                    const uStr = sessionStorage.getItem('user') || localStorage.getItem('user');
+                    if (uStr) {
+                        const uObj = JSON.parse(uStr);
+                        if (type === 'favicon') {
+                            uObj.platform_favicon_url = serverUrl;
+                        } else {
+                            uObj.platform_logo_url = serverUrl;
+                        }
+                        const uJson = JSON.stringify(sanitizeUserForStorage(uObj));
+                        if (sessionStorage.getItem('user')) sessionStorage.setItem('user', uJson);
+                        if (localStorage.getItem('user')) localStorage.setItem('user', uJson);
+                        if (window.OctaQube && OctaQube.user) {
+                            if (type === 'favicon') OctaQube.user.platform_favicon_url = serverUrl;
+                            else OctaQube.user.platform_logo_url = serverUrl;
+                        }
+                    }
+                } catch (_) {}
 
                 if (window.OctaQube && typeof OctaQube.applyBranding === 'function') {
                     OctaQube.applyBranding();
                 }
 
-                // Automatically persist branding to backend
-                try {
-                    this.saveBranding();
-                } catch (_) {}
-
-                // If it's a main-logo or logo, also upload file to backend server storage
-                if (type === 'main-logo' || type === 'logo') {
-                    try {
-                        const fd = new FormData();
-                        fd.append('logo_file', file);
-                        const token = (window.api && window.api.token) || localStorage.getItem('token') || sessionStorage.getItem('token');
-                        fetch('/api/document-identity/upload-logo', {
-                            method: 'POST',
-                            headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-                            body: fd
-                        }).then(r => r.json()).then(res => {
-                            if (res.status === 'success' && res.logo_url) {
-                                const a = JSON.parse(localStorage.getItem('octaqube_brand_assets') || '{}');
-                                a['main-logo'] = res.logo_url;
-                                a['logo'] = res.logo_url;
-                                localStorage.setItem('octaqube_brand_assets', JSON.stringify(a));
-                            }
-                        }).catch(() => {});
-                    } catch (_) {}
-                }
+                // 5. Silently sync branding settings with clean URLs
+                await this.saveBranding(true);
 
                 OctaQube.toast(`Uploaded and updated ${type.replace('-', ' ')} in real time!`, 'success');
-            };
-            reader.readAsDataURL(file);
+            } catch (err) {
+                console.error('[UploadAsset Error]', err);
+                OctaQube.toast(`Failed to upload ${type.replace('-', ' ')}: ${err.message || 'Server error'}`, 'error');
+            }
         };
         fileInput.click();
     },
@@ -2361,7 +2389,7 @@ const PlatformSettings = {
         } catch (_) {}
 
         if (window.lucide) lucide.createIcons();
-        this.saveBranding();
+        this.saveBranding(true);
 
         // Also call backend remove endpoint if available
         try {
@@ -2430,7 +2458,7 @@ const PlatformSettings = {
         }
     },
 
-    async saveBranding() {
+    async saveBranding(silent = false) {
         try {
             const currentMode = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
             const brand = this._brandingData || this._initBrandingData(JSON.parse(localStorage.getItem('octaqube_branding_config') || '{}'));
@@ -2487,8 +2515,16 @@ const PlatformSettings = {
                 OctaQube.applyBranding();
             }
 
-            OctaQube.toast(`Branding customizations saved for ${currentMode === 'dark' ? 'Dark' : 'Light'} Mode & applied live!`, 'success');
-        } catch (e) { OctaQube.toast(e.message || 'Save failed.', 'error'); }
+            if (!silent) {
+                OctaQube.toast(`Branding customizations saved for ${currentMode === 'dark' ? 'Dark' : 'Light'} Mode & applied live!`, 'success');
+            }
+        } catch (e) {
+            if (!silent) {
+                OctaQube.toast(e.message || 'Save failed.', 'error');
+            } else {
+                throw e;
+            }
+        }
     },
 
     async saveOrganizations() {

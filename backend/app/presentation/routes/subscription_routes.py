@@ -1038,7 +1038,7 @@ def create_subscription():
         total_amount=final_amount,
         currency=sub.currency,
         is_tax_inclusive=is_tax_inclusive,
-        invoice_status='Sent' if data.get('payment_status') == 'Paid' else 'Draft',
+        invoice_status='Paid' if data.get('payment_status') == 'Paid' else 'Sent',
     )
     db.session.add(inv)
 
