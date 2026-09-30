@@ -146,7 +146,19 @@ const api = {
         // Skip this guard on the Super Admin portal — super admins have unrestricted platform access.
         const isSuperAdminPortalPage = typeof window !== 'undefined' && window.location.pathname.includes('/admin/super-admin.html');
         if (!isSuperAdminPortalPage && window.OctaQube_MODULE_MAP && window.FeatureEngine && !endpoint.includes('/feature-engine/')) {
-            const moduleCode = window.OctaQube_MODULE_MAP.findByRoute(endpoint);
+            let moduleCode = null;
+            if (endpoint.includes('/repository/list')) {
+                moduleCode = 'projects.view';
+            } else if (typeof window.OctaQube_MODULE_MAP.findByApi === 'function') {
+                moduleCode = window.OctaQube_MODULE_MAP.findByApi(endpoint);
+            } else {
+                moduleCode = window.OctaQube_MODULE_MAP.findByRoute(endpoint);
+            }
+
+            if (moduleCode === 'files.view' && endpoint.includes('/repository/list')) {
+                moduleCode = 'projects.view';
+            }
+
             if (moduleCode && FeatureEngine.isEnabled(moduleCode) === false) {
                 console.warn(`[API Guard] Blocking request to disabled module: ${moduleCode}`);
                 FeatureEngine.showDisabledModuleNotice(moduleCode);

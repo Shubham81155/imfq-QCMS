@@ -585,7 +585,7 @@
 
 
     <script src="/assets/dist/bootstrap.bundle.min.js"></script>
-    <script src="/assets/dist/core-bundle.b4a62f66.min.js"></script>
+    <script src="/assets/dist/core-bundle.662dddd7.min.js"></script>
     <script>
     function esc(str) {
         if (!str) return '';
@@ -2083,18 +2083,6 @@
         async loadDepartments(plantVal = '') {
             try {
                 const select = document.getElementById('deptFilter');
-                const plantCol = document.getElementById('plantFilterCol');
-                const isPlantFilterVisible = plantCol && plantCol.style.display !== 'none';
-
-                if (isPlantFilterVisible && !plantVal) {
-                    if (select) {
-                        select.innerHTML = '<option value="">Select plant location first...</option>';
-                        select.value = '';
-                        select.disabled = true;
-                    }
-                    return;
-                }
-
                 let url = '/projects/departments';
                 if (plantVal) {
                     url += '?plant_name=' + encodeURIComponent(plantVal);
@@ -2159,18 +2147,23 @@
                 };
 
                 const res = await api.getRepositoryProjects(filters);
+                if (!res) {
+                    throw new Error('No data received from repository service.');
+                }
                 this.data = res.projects || [];
                 this.totalProjects = res.total !== undefined ? res.total : this.data.length;
                 this.totalPages = res.total_pages !== undefined ? res.total_pages : 1;
                 this.currentPage = res.page !== undefined ? res.page : page;
 
-                this.renderStats(res.stats || { total: 0, active: 0, completed: 0, stalled: 0 });
+                this.renderStats(res.stats || { total: 0, active: 0, completed: 0, stalled: 0, stopped: 0 });
                 this.renderTable();
                 this.renderPagination();
             } catch (e) {
-                OctaQube.toast('Failed to sync repository data', 'danger');
+                console.error('Failed to sync repository data:', e);
+                OctaQube.toast(e.message || 'Failed to sync repository data', 'danger');
+                this.renderStats({ total: 0, active: 0, completed: 0, stalled: 0, stopped: 0 });
                 document.getElementById('repoTableBody').innerHTML = 
-                    `<tr><td colspan="5">${OctaQube.emptyState('System Error', e.message, 'alert-circle')}</td></tr>`;
+                    `<tr><td colspan="5">${OctaQube.emptyState('System Error', e.message || 'Failed to sync repository data', 'alert-circle')}</td></tr>`;
                 if (window.lucide) lucide.createIcons();
             }
         },

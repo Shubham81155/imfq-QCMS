@@ -243,20 +243,21 @@ def list_repository_projects():
     query = Project.query.filter_by(org_id=user.org_id)
     
     # Enforce Role-Based Access Control for visibility
-    if user.role.name == 'Team Member':
+    user_role_name = (user.role.name if user and user.role else '')
+    if user_role_name == 'Team Member':
         query = query.filter(db.or_(
             Project.members.any(id=user.id),
             Project.creator_id == user.id,
             Project.team_leader_id == user.id
         ))
-    elif user.role.name == 'Team Leader':
+    elif user_role_name == 'Team Leader':
         # Team Leaders can see projects they lead, created, or are assigned to
         query = query.filter(db.or_(
             Project.team_leader_id == user.id,
             Project.creator_id == user.id,
             Project.members.any(id=user.id)
         ))
-    elif user.role.name == 'Facilitator':
+    elif user_role_name == 'Facilitator':
         query = query.filter(Project.facilitator_id == user.id)
     # Reviewers, Admins, CEOs, SuperAdmins can see all org projects
 
@@ -440,7 +441,17 @@ def list_repository_projects():
     if category:
         table_query = table_query.filter_by(category=category)
         
-    projects = table_query.order_by(Project.created_at.desc()).all()
+    total_items = table_query.count()
+    if page is not None:
+        per_page = max(1, min(per_page or 10, 100))
+        start = max(0, (page - 1) * per_page)
+        projects = table_query.order_by(Project.created_at.desc()).offset(start).limit(per_page).all()
+        total_pages = (total_items + per_page - 1) // per_page if total_items > 0 else 1
+    else:
+        projects = table_query.order_by(Project.created_at.desc()).all()
+        total_pages = 1
+        page = 1
+        per_page = total_items
     
     results = []
     
@@ -497,42 +508,39 @@ def list_repository_projects():
             if is_p_approval:
                 display_status = 'Pending Approval'
 
+        formatted_updated = None
+        if last_activity:
+            if hasattr(last_activity, 'tzinfo') and last_activity.tzinfo is not None:
+                formatted_updated = last_activity.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            elif hasattr(last_activity, 'isoformat'):
+                formatted_updated = last_activity.isoformat() + "Z"
+            else:
+                formatted_updated = str(last_activity)
+
+        tl_name = "N/A"
+        if p.team_leader:
+            tl_name = p.team_leader.full_name or p.team_leader.username or "N/A"
+
+        dept_name = "N/A"
+        if p.department:
+            dept_name = p.department.name or "N/A"
+
         results.append({
             "id": p.id,
             "project_uid": p.project_uid,
             "title": p.title,
             "category": p.category,
-            "department": p.department.name if p.department else "N/A",
-            "team_leader": p.team_leader.full_name if p.team_leader else "N/A",
+            "department": dept_name,
+            "team_leader": tl_name,
             "current_stage": p.current_stage,
             "progress": progress_pct,
             "progress_pct": progress_pct,
             "efficiency": efficiency,
             "status": display_status,
             "is_stalled": is_stalled,
-            "last_updated": (last_activity.isoformat() + "Z") if last_activity else None
+            "last_updated": formatted_updated
         })
 
-    total_items = len(results)
-    if page is not None:
-        start = (page - 1) * per_page
-        end = start + per_page
-        paginated_projects = results[start:end]
-        total_pages = (total_items + per_page - 1) // per_page if total_items > 0 else 1
-        return jsonify({
-            "stats": {
-                "total": total_count,
-                "active": active_count,
-                "stalled": stalled_count,
-                "stopped": stopped_count
-            },
-            "page": page,
-            "per_page": per_page,
-            "total": total_items,
-            "total_pages": total_pages,
-            "projects": paginated_projects
-        }), 200
-        
     return jsonify({
         "stats": {
             "total": total_count,
@@ -540,10 +548,10 @@ def list_repository_projects():
             "stalled": stalled_count,
             "stopped": stopped_count
         },
-        "page": 1,
-        "per_page": total_items,
+        "page": page,
+        "per_page": per_page,
         "total": total_items,
-        "total_pages": 1,
+        "total_pages": total_pages,
         "projects": results
     }), 200
 

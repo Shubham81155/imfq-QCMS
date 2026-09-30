@@ -199,15 +199,22 @@ window.OctaQube_MODULE_MAP = {
     "files.view": {
         category: "CORE",
         name: "Document Repository Explorer",
-        route: "/repository",
+        route: "/projects/repository.html",
         selectors: ["#nav-repository", "[data-feature='files.view']"],
-        api: "/api/repository"
+        api: "/api/repository/search"
     },
     "files.upload": {
         category: "CORE",
         name: "Upload Files & Evidence Attachments",
         selectors: ["#btn-upload-file", ".dropzone-upload", "[data-feature='files.upload']"],
         api: "/api/repository/upload"
+    },
+    "projects.repository": {
+        category: "CORE",
+        name: "Project Repository",
+        route: "/projects/projects-repository.html",
+        selectors: ["#nav-projects-repository", "[data-feature='projects.repository']"],
+        api: "/api/repository/list"
     },
 
     // ── AI ASSISTANT & RAG SEARCH ───────────────────────────────────────────
@@ -251,8 +258,32 @@ window.OctaQube_MODULE_MAP = {
  * Helper to get module code by route or selector.
  */
 window.OctaQube_MODULE_MAP.findByRoute = function (pathname) {
+    if (!pathname) return null;
+    const clean = pathname.split('?')[0];
+    if (clean === '/projects/projects-repository.html' || clean.includes('projects-repository')) {
+        return 'projects.view';
+    }
     for (const [code, item] of Object.entries(window.OctaQube_MODULE_MAP)) {
-        if (item.route && pathname.startsWith(item.route)) return code;
+        if (item.route && (clean === item.route || clean.startsWith(item.route + '/') || clean.startsWith(item.route))) {
+            return code;
+        }
+    }
+    return null;
+};
+
+/**
+ * Helper to get module code by backend API endpoint.
+ */
+window.OctaQube_MODULE_MAP.findByApi = function (endpoint) {
+    if (!endpoint) return null;
+    const clean = endpoint.split('?')[0];
+    if (clean.includes('/repository/list')) {
+        return 'projects.view';
+    }
+    for (const [code, item] of Object.entries(window.OctaQube_MODULE_MAP)) {
+        if (item.api && (clean === item.api || clean.startsWith(item.api + '/') || (item.api.length > 5 && clean.startsWith(item.api)))) {
+            return code;
+        }
     }
     return null;
 };
