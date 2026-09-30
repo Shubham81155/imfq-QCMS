@@ -206,6 +206,9 @@
                 padding: var(--ds-space-10);
             }
         }
+        .char-counter {
+            display: none !important;
+        }
     </style>
 </head>
 
@@ -245,7 +248,7 @@
 
             <!-- STEP 1: IDENTIFIER ONLY (Shown by default) -->
             <div id="stepIdentifier">
-                <form id="identifierForm" onsubmit="window.handleProceedClick(); return false;" autocomplete="on">
+                <form id="identifierForm" action="javascript:void(0);" onsubmit="event.preventDefault(); window.handleProceedClick(event); return false;" autocomplete="on">
                     <div class="ds-field" id="identifierFieldContainer">
                         <label class="ds-label" id="identifierLabel"><i data-lucide="mail"></i> <span id="identifierLabelText">Email ID or Phone Number</span> <span class="text-danger">*</span></label>
                         <input type="text" class="ds-input" id="username"
@@ -253,7 +256,7 @@
                             autocapitalize="none" autocorrect="off" spellcheck="false" autofocus>
                     </div>
 
-                    <button type="submit" class="ds-btn ds-btn-primary w-100 ds-btn-lg" id="btnProceed">
+                    <button type="button" class="ds-btn ds-btn-primary w-100 ds-btn-lg" id="btnProceed" onclick="window.handleProceedClick(event)">
                         Proceed <i data-lucide="arrow-right" style="width: 18px; height: 18px; margin-left: 6px;"></i>
                     </button>
                 </form>
@@ -269,7 +272,7 @@
                     <button type="button" onclick="window.goToIdentifierStep()" style="background: none; border: none; color: var(--ds-accent); font-size: 0.8125rem; font-weight: 700; cursor: pointer; padding: 0 4px; text-decoration: underline;">Change</button>
                 </div>
 
-                <form id="passwordForm" onsubmit="window.handlePasswordSubmit(); return false;" autocomplete="on">
+                <form id="passwordForm" action="javascript:void(0);" onsubmit="event.preventDefault(); window.handlePasswordSubmit(event); return false;" autocomplete="on">
                     <div class="ds-field" id="passwordFieldContainer">
                         <label class="ds-label"><i data-lucide="lock"></i> Password <span class="text-danger">*</span></label>
                         <div style="position: relative;">
@@ -282,7 +285,7 @@
                         </div>
                     </div>
 
-                    <button type="submit" class="ds-btn ds-btn-primary w-100 ds-btn-lg" id="loginBtn">
+                    <button type="button" class="ds-btn ds-btn-primary w-100 ds-btn-lg" id="loginBtn" onclick="window.handlePasswordSubmit(event)">
                         Sign In
                     </button>
                 </form>
@@ -305,10 +308,10 @@
                     <button type="button" onclick="window.goToIdentifierStep()" style="background: none; border: none; color: var(--ds-accent); font-size: 0.8125rem; font-weight: 700; cursor: pointer; padding: 0 4px; text-decoration: underline;">Change</button>
                 </div>
 
-                <form id="otpForm" onsubmit="window.handleOtpSubmit(); return false;">
+                <form id="otpForm" action="javascript:void(0);" onsubmit="event.preventDefault(); window.handleOtpSubmit(event); return false;">
                     <div class="ds-field" id="otpCodeFieldContainer">
                         <label class="ds-label"><i data-lucide="key-round"></i> 6-Digit Verification Code <span class="text-danger">*</span></label>
-                        <input type="text" class="ds-input text-center fw-bold" id="loginOtpInput"
+                        <input type="text" class="ds-input text-center fw-bold no-counter" id="loginOtpInput" data-no-counter="true"
                             placeholder="••••••" maxlength="6" inputmode="numeric" pattern="[0-9]*"
                             style="font-size: 1.5rem; letter-spacing: 0.4em; padding-left: 0.4em;" autocomplete="one-time-code">
                         <div class="form-text mt-2 text-muted" id="otpDestinationHint" style="font-size: 0.8125rem;">
@@ -327,7 +330,7 @@
                         </button>
                     </div>
 
-                    <button type="submit" class="ds-btn ds-btn-primary w-100 ds-btn-lg mb-3" id="btnVerifyOtp">
+                    <button type="button" class="ds-btn ds-btn-primary w-100 ds-btn-lg mb-3" id="btnVerifyOtp" onclick="window.handleOtpSubmit(event)">
                         Verify &amp; Continue
                     </button>
                 </form>
@@ -356,8 +359,8 @@
     </div>
 
     <script src="/assets/dist/core-bundle.b4a62f66.min.js"></script>
-    <script src="/assets/dist/enterprise-validator.min.js"></script>
-    <script src="/assets/dist/auth.min.js"></script>
+    <script src="/assets/dist/enterprise-validator.min.js?v=20260930_1615"></script>
+    <script src="/assets/dist/auth.min.js?v=20260930_1615"></script>
     <script>
         function togglePassword(inputId, btn) {
             const input = document.getElementById(inputId);
@@ -581,6 +584,423 @@
                 });
             }
         });
+    
+        // ── Direct Stepped Smart Auth Controller (Guaranteed to execute immediately) ──
+        (function() {
+            let _activeIdentifier = '';
+            let _otpMode = 'first_time';
+            let _otpCountdownTimer = null;
+
+            function _getApi() {
+                return window.api || {
+                    post: async function(endpoint, body) {
+                        const url = endpoint.startsWith('http') ? endpoint : ('/api' + (endpoint.startsWith('/') ? endpoint : '/' + endpoint));
+                        const res = await fetch(url, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(body)
+                        });
+                        const data = await res.json().catch(() => ({}));
+                        if (!res.ok) {
+                            const err = new Error(data.message || data.msg || 'Request failed');
+                            err.status = res.status;
+                            err.data = data;
+                            throw err;
+                        }
+                        return data;
+                    }
+                };
+            }
+
+            function _showAuthError(msg) {
+                const errorMsg = document.getElementById('errorMsg');
+                if (!errorMsg) return;
+                const span = errorMsg.querySelector('span');
+                if (span) span.textContent = msg;
+                else errorMsg.textContent = msg;
+                errorMsg.style.setProperty('display', 'flex', 'important');
+                const successMsg = document.getElementById('successMsg');
+                if (successMsg) successMsg.style.setProperty('display', 'none', 'important');
+            }
+
+            function _clearAuthMessages() {
+                const errorMsg = document.getElementById('errorMsg');
+                if (errorMsg) errorMsg.style.setProperty('display', 'none', 'important');
+                const successMsg = document.getElementById('successMsg');
+                if (successMsg) successMsg.style.setProperty('display', 'none', 'important');
+            }
+
+            window.goToIdentifierStep = function() {
+                _clearAuthMessages();
+                const stepIdentifier = document.getElementById('stepIdentifier');
+                const stepPassword   = document.getElementById('stepPassword');
+                const stepOtp        = document.getElementById('stepOtp');
+
+                if (stepIdentifier) stepIdentifier.style.display = 'block';
+                if (stepPassword)   stepPassword.style.display   = 'none';
+                if (stepOtp)        stepOtp.style.display        = 'none';
+
+                const heading = document.getElementById('loginFormHeading');
+                const sub     = document.getElementById('loginFormSubtitle');
+                if (heading) heading.textContent = 'Welcome back';
+                if (sub)     sub.textContent     = 'Enter your registered Email ID or Phone Number to continue';
+
+                const pwdInput = document.getElementById('password');
+                if (pwdInput) pwdInput.value = '';
+
+                const otpInput = document.getElementById('loginOtpInput');
+                if (otpInput) otpInput.value = '';
+
+                const btnProceed = document.getElementById('btnProceed');
+                if (btnProceed) {
+                    btnProceed.disabled = false;
+                    btnProceed.innerHTML = 'Proceed <i data-lucide="arrow-right" style="width: 18px; height: 18px; margin-left: 6px;"></i>';
+                }
+
+                if (_otpCountdownTimer) {
+                    clearInterval(_otpCountdownTimer);
+                    _otpCountdownTimer = null;
+                }
+
+                const userInput = document.getElementById('username');
+                if (userInput) {
+                    setTimeout(() => userInput.focus(), 50);
+                }
+                if (window.lucide) lucide.createIcons();
+            };
+
+            window.goToPasswordStep = function() {
+                _clearAuthMessages();
+                const stepIdentifier = document.getElementById('stepIdentifier');
+                const stepPassword   = document.getElementById('stepPassword');
+                const stepOtp        = document.getElementById('stepOtp');
+
+                if (stepIdentifier) stepIdentifier.style.display = 'none';
+                if (stepPassword)   stepPassword.style.display   = 'block';
+                if (stepOtp)        stepOtp.style.display        = 'none';
+
+                const heading = document.getElementById('loginFormHeading');
+                const sub     = document.getElementById('loginFormSubtitle');
+                if (heading) heading.textContent = 'Welcome back';
+                if (sub)     sub.textContent     = 'Enter your password to sign in';
+
+                const badgeSpan = document.getElementById('displayIdentifierPwd');
+                if (badgeSpan) badgeSpan.textContent = _activeIdentifier;
+
+                const pwdInput = document.getElementById('password');
+                if (pwdInput) {
+                    pwdInput.value = '';
+                    setTimeout(() => pwdInput.focus(), 50);
+                }
+
+                const loginBtn = document.getElementById('loginBtn');
+                if (loginBtn) {
+                    loginBtn.disabled = false;
+                    loginBtn.innerHTML = 'Sign In';
+                }
+
+                if (_otpCountdownTimer) {
+                    clearInterval(_otpCountdownTimer);
+                    _otpCountdownTimer = null;
+                }
+                if (window.lucide) lucide.createIcons();
+            };
+
+            window.goToOtpStep = function(mode, maskedDestination, customMsg) {
+                _clearAuthMessages();
+                _otpMode = mode || 'first_time';
+
+                const stepIdentifier = document.getElementById('stepIdentifier');
+                const stepPassword   = document.getElementById('stepPassword');
+                const stepOtp        = document.getElementById('stepOtp');
+
+                if (stepIdentifier) stepIdentifier.style.display = 'none';
+                if (stepPassword)   stepPassword.style.display   = 'none';
+                if (stepOtp)        stepOtp.style.display        = 'block';
+
+                const heading = document.getElementById('loginFormHeading');
+                const sub     = document.getElementById('loginFormSubtitle');
+                const badgeSpan = document.getElementById('displayIdentifierOtp');
+                const hintEl  = document.getElementById('otpDestinationHint');
+                const verifyBtn = document.getElementById('btnVerifyOtp');
+                const backToPwdLink = document.getElementById('linkBackToPassword');
+
+                if (badgeSpan) badgeSpan.textContent = _activeIdentifier;
+
+                if (_otpMode === 'first_time') {
+                    if (heading) heading.textContent = 'First Time Setup';
+                    const destStr = maskedDestination ? ` (${maskedDestination})` : '';
+                    const msg = customMsg || `Verification code sent to your registered destination${destStr}.`;
+                    if (sub) sub.textContent = 'Verify your account to create your permanent password';
+                    if (hintEl) hintEl.textContent = msg;
+                    if (verifyBtn) verifyBtn.innerHTML = 'Verify &amp; Continue <i data-lucide="arrow-right" style="width:16px;height:16px;margin-left:6px;"></i>';
+                    if (backToPwdLink) backToPwdLink.style.display = 'none';
+                } else {
+                    if (heading) heading.textContent = 'Sign In with OTP';
+                    const destStr = maskedDestination ? ` sent to ${maskedDestination}` : '';
+                    const msg = customMsg || `Enter the 6-digit login code${destStr}.`;
+                    if (sub) sub.textContent = 'Enter the verification code sent to your device';
+                    if (hintEl) hintEl.textContent = msg;
+                    if (verifyBtn) verifyBtn.innerHTML = 'Verify &amp; Sign In <i data-lucide="check-circle" style="width:16px;height:16px;margin-left:6px;"></i>';
+                    if (backToPwdLink) backToPwdLink.style.display = 'inline-block';
+                }
+
+                const otpInput = document.getElementById('loginOtpInput');
+                if (otpInput) {
+                    otpInput.value = '';
+                    setTimeout(() => otpInput.focus(), 50);
+                }
+
+                window.startOtpCountdown(60);
+                if (window.lucide) lucide.createIcons();
+            };
+
+            window.startOtpCountdown = function(seconds = 60) {
+                if (_otpCountdownTimer) clearInterval(_otpCountdownTimer);
+                let left = seconds;
+                const timerSec = document.getElementById('otpTimerSec');
+                const countdownTxt = document.getElementById('otpCountdownText');
+                const resendBtn = document.getElementById('btnResendOtp');
+
+                if (countdownTxt) countdownTxt.style.display = '';
+                if (resendBtn) resendBtn.style.display = 'none';
+                if (timerSec) timerSec.textContent = left;
+
+                _otpCountdownTimer = setInterval(() => {
+                    left -= 1;
+                    if (timerSec) timerSec.textContent = left;
+                    if (left <= 0) {
+                        clearInterval(_otpCountdownTimer);
+                        _otpCountdownTimer = null;
+                        if (countdownTxt) countdownTxt.style.display = 'none';
+                        if (resendBtn) resendBtn.style.display = 'inline-block';
+                    }
+                }, 1000);
+            };
+
+            window.handleProceedClick = async function(e) {
+                if (e && e.preventDefault) e.preventDefault();
+                _clearAuthMessages();
+
+                const usernameInput = document.getElementById('username');
+                const identifier = (usernameInput?.value || '').trim();
+                const btnProceed = document.getElementById('btnProceed');
+
+                if (!identifier) {
+                    _showAuthError('Please enter your Email ID or Phone Number.');
+                    if (usernameInput) usernameInput.focus();
+                    return;
+                }
+
+                if (btnProceed) {
+                    btnProceed.disabled = true;
+                    btnProceed.innerHTML = '<span style="display:flex;align-items:center;justify-content:center;gap:8px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation:spin 1s linear infinite"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>Verifying...</span>';
+                }
+
+                try {
+                    const apiObj = _getApi();
+                    const res = await apiObj.post('/auth/lookup-identifier', { identifier });
+                    _activeIdentifier = identifier;
+
+                    if (res.flow === 'first_time_otp') {
+                        _otpMode = 'first_time';
+                        window.goToOtpStep('first_time', res.masked_destination, res.message || res.msg);
+                    } else {
+                        window.goToPasswordStep();
+                    }
+                } catch (err) {
+                    if (btnProceed) {
+                        btnProceed.disabled = false;
+                        btnProceed.innerHTML = 'Proceed <i data-lucide="arrow-right" style="width: 18px; height: 18px; margin-left: 6px;"></i>';
+                        if (window.lucide) lucide.createIcons();
+                    }
+                    const msg = (err.message && err.message !== 'API Error' && err.message !== 'Request failed. Please try again.') 
+                        ? err.message 
+                        : 'User not found';
+                    _showAuthError(msg);
+                    if (usernameInput) usernameInput.focus();
+                }
+            };
+
+            window.handleSignInWithOtpClick = async function(e) {
+                if (e && e.preventDefault) e.preventDefault();
+                _clearAuthMessages();
+                const identifier = _activeIdentifier || (document.getElementById('username')?.value || '').trim();
+                if (!identifier) {
+                    window.goToIdentifierStep();
+                    return;
+                }
+
+                const linkOtp = document.getElementById('linkSignInWithOtp');
+                if (linkOtp) {
+                    linkOtp.style.pointerEvents = 'none';
+                    linkOtp.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Sending code...';
+                }
+
+                try {
+                    const apiObj = _getApi();
+                    const res = await apiObj.post('/auth/login-otp/send', { identifier });
+                    _otpMode = 'returning_otp';
+                    window.goToOtpStep('returning_otp', res.masked_destination, res.msg || 'Verification code sent successfully.');
+                } catch (err) {
+                    _showAuthError(err.message || 'Failed to dispatch verification code. Please try again.');
+                } finally {
+                    if (linkOtp) {
+                        linkOtp.style.pointerEvents = '';
+                        linkOtp.innerHTML = '<i data-lucide="smartphone" style="width:14px;height:14px;"></i> Sign in with OTP';
+                        if (window.lucide) lucide.createIcons();
+                    }
+                }
+            };
+
+            window.handlePasswordSubmit = async function(e) {
+                if (e && e.preventDefault) e.preventDefault();
+                _clearAuthMessages();
+
+                const identifier = _activeIdentifier || (document.getElementById('username')?.value || '').trim();
+                const password = document.getElementById('password')?.value || '';
+                const loginBtn = document.getElementById('loginBtn');
+
+                if (!password) {
+                    _showAuthError('Please enter your password.');
+                    document.getElementById('password')?.focus();
+                    return;
+                }
+
+                if (loginBtn) {
+                    loginBtn.disabled = true;
+                    loginBtn.innerHTML = '<span style="display:flex;align-items:center;justify-content:center;gap:8px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation:spin 1s linear infinite"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>Signing In...</span>';
+                }
+
+                try {
+                    const apiObj = _getApi();
+                    const data = await apiObj.post('/auth/login', { username: identifier, password: password, remember_me: false });
+                    if (!data || (!data.access_token && !data.id && !data.username)) {
+                        throw new Error(data?.msg || data?.message || "Invalid password");
+                    }
+                    if (typeof handleLoginSuccess === 'function') {
+                        handleLoginSuccess(data, loginBtn);
+                    } else {
+                        if (data.access_token) {
+                            sessionStorage.setItem('token', data.access_token);
+                            localStorage.setItem('token', data.access_token);
+                        }
+                        sessionStorage.setItem('octaqube_authenticated', 'true');
+                        window.location.replace('/dashboard/dashboard-admin.html');
+                    }
+                } catch (err) {
+                    if (loginBtn) {
+                        loginBtn.disabled = false;
+                        loginBtn.innerHTML = 'Sign In';
+                    }
+                    const displayTxt = (err.message && err.message !== 'API Error' && err.message !== 'Request failed. Please try again.') 
+                        ? err.message 
+                        : 'Invalid password. Please try again.';
+                    _showAuthError(displayTxt);
+                    document.getElementById('password')?.focus();
+                }
+            };
+
+            window.handleOtpSubmit = async function(e) {
+                if (e && e.preventDefault) e.preventDefault();
+                _clearAuthMessages();
+                const identifier = _activeIdentifier || (document.getElementById('username')?.value || '').trim();
+                const otp = (document.getElementById('loginOtpInput')?.value || '').trim();
+                const verifyBtn = document.getElementById('btnVerifyOtp');
+
+                if (!otp || otp.length < 6) {
+                    _showAuthError('Please enter the full 6-digit verification code.');
+                    document.getElementById('loginOtpInput')?.focus();
+                    return;
+                }
+
+                if (verifyBtn) {
+                    verifyBtn.disabled = true;
+                    verifyBtn.innerHTML = '<span style="display:flex;align-items:center;justify-content:center;gap:8px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation:spin 1s linear infinite"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>Verifying code...</span>';
+                }
+
+                try {
+                    const apiObj = _getApi();
+                    if (_otpMode === 'first_time') {
+                        const data = await apiObj.post('/auth/verify-first-time-otp', { identifier, otp });
+                        if (verifyBtn) {
+                            verifyBtn.innerHTML = '<span style="display:flex;align-items:center;justify-content:center;gap:8px"><i data-lucide="check-circle" style="width:16px;height:16px;"></i> Verified! Redirecting...</span>';
+                        }
+                        const targetUrl = data.redirect_url || `/auth/reset-password.html?token=${data.reset_token}&first_time=1`;
+                        window.location.replace(targetUrl);
+                    } else {
+                        const data = await apiObj.post('/auth/login-otp/verify', { identifier, otp, remember_me: false });
+                        if (typeof handleLoginSuccess === 'function') {
+                            handleLoginSuccess(data, verifyBtn);
+                        } else {
+                            if (data.access_token) {
+                                sessionStorage.setItem('token', data.access_token);
+                                localStorage.setItem('token', data.access_token);
+                            }
+                            window.location.replace('/dashboard/dashboard-admin.html');
+                        }
+                    }
+                } catch (err) {
+                    if (verifyBtn) {
+                        verifyBtn.disabled = false;
+                        if (_otpMode === 'first_time') {
+                            verifyBtn.innerHTML = 'Verify &amp; Continue <i data-lucide="arrow-right" style="width:16px;height:16px;margin-left:6px;"></i>';
+                        } else {
+                            verifyBtn.innerHTML = 'Verify &amp; Sign In <i data-lucide="check-circle" style="width:16px;height:16px;margin-left:6px;"></i>';
+                        }
+                        if (window.lucide) lucide.createIcons();
+                    }
+                    _showAuthError(err.message || 'Invalid or expired verification code.');
+                    document.getElementById('loginOtpInput')?.focus();
+                }
+            };
+
+            window.resendOtp = async function() {
+                const identifier = _activeIdentifier || (document.getElementById('username')?.value || '').trim();
+                if (!identifier) {
+                    window.goToIdentifierStep();
+                    return;
+                }
+                const resendBtn = document.getElementById('btnResendOtp');
+                if (resendBtn) {
+                    resendBtn.disabled = true;
+                    resendBtn.textContent = 'Sending...';
+                }
+
+                try {
+                    const apiObj = _getApi();
+                    let res;
+                    if (_otpMode === 'first_time') {
+                        res = await apiObj.post('/auth/lookup-identifier', { identifier });
+                    } else {
+                        res = await apiObj.post('/auth/login-otp/send', { identifier });
+                    }
+                    const successMsgEl = document.getElementById('successMsg');
+                    if (successMsgEl) {
+                        successMsgEl.querySelector('span').textContent = res.msg || res.message || 'A new verification code has been dispatched.';
+                        successMsgEl.style.display = 'flex';
+                    }
+                    window.startOtpCountdown(60);
+                } catch (err) {
+                    _showAuthError(err.message || 'Failed to resend code. Please try again.');
+                    if (resendBtn) resendBtn.disabled = false;
+                }
+            };
+
+            // Auto-advance OTP input
+            document.addEventListener('DOMContentLoaded', () => {
+                const otpInput = document.getElementById('loginOtpInput');
+                if (otpInput) {
+                    otpInput.addEventListener('input', (e) => {
+                        e.target.value = e.target.value.replace(/\D/g, '');
+                        if (e.target.value.length === 6) {
+                            window.handleOtpSubmit();
+                        }
+                    });
+                }
+            });
+        })();
+    
     </script>
 </body>
 
