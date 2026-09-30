@@ -394,7 +394,7 @@
                 successMsgEl.querySelector('span').textContent = "Registration successful! You can now log in.";
                 successMsgEl.style.display = 'flex';
             } else if (urlParams.get('reset')) {
-                successMsgEl.querySelector('span').textContent = "âœ“ Password updated successfully! Please log in with your new password.";
+                successMsgEl.querySelector('span').textContent = "Password updated successfully! Please log in with your new password.";
                 successMsgEl.style.display = 'flex';
             } else if (urlParams.get('reason') === 'session_terminated') {
                 const errEl = document.getElementById('errorMsg');
