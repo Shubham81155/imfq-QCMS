@@ -3176,57 +3176,69 @@ def upload_evidence():
 @admin_bp.route('/org-branding/upload', methods=['POST'])
 @admin_required
 def upload_branding():
-    if 'file' not in request.files:
-        return jsonify({"message": "No file part"}), 400
-    file = request.files['file']
-    asset_type = request.form.get('type') # 'logo' or 'favicon'
-    
-    if file.filename == '':
-        return jsonify({"message": "No selected file"}), 400
-    
-    if asset_type not in ['logo', 'favicon']:
-        return jsonify({"message": "Invalid asset type"}), 400
-
-    current_user_id = int(get_jwt_identity())
-    current_user = db.session.get(User, current_user_id)
-    if not current_user:
-        return jsonify({"message": "User not found"}), 404
-
-    org_id = current_user.org_id
-    if not org_id:
-        return jsonify({"message": "No organization associated with this account"}), 400
-
-    org = db.session.get(Organization, org_id)
-    if not org:
-        return jsonify({"message": "Organization not found"}), 404
-
-    if file:
-        from app.infrastructure.storage import storage
-        ext = os.path.splitext(file.filename)[1].lower()
-        allowed_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico']
-        if ext not in allowed_extensions:
-            return jsonify({"message": f"Unsupported file extension '{ext}'. Allowed: {', '.join(allowed_extensions)}"}), 400
-
-        target_name = f"org_{org.id}_{asset_type}{ext}"
-        result = storage.save_file(file, filename=target_name, subfolder="branding")
-        file_url = result['url']
+    try:
+        if 'file' not in request.files:
+            return jsonify({"message": "No file part"}), 400
+        file = request.files['file']
+        asset_type = request.form.get('type') # 'logo' or 'favicon'
         
-        if asset_type == 'logo':
-            org.logo_url = file_url
+        if file.filename == '':
+            return jsonify({"message": "No selected file"}), 400
+        
+        if asset_type not in ['logo', 'favicon']:
+            return jsonify({"message": "Invalid asset type"}), 400
+
+        identity = get_jwt_identity()
+        if isinstance(identity, dict):
+            current_user_id = int(identity.get('id') or identity.get('user_id'))
         else:
-            org.favicon_url = file_url
-            
-        db.session.commit()
-        
-        try:
-            from app.domain.services.document_branding_service import DocumentBrandingService
-            DocumentBrandingService.invalidate_cache(org.id)
-        except Exception:
-            pass
+            current_user_id = int(identity)
 
-        log_action(current_user.id, "UPDATE_BRANDING", org.id, "organizations", org.id, {"type": asset_type})
-        
-        return jsonify({"url": file_url, "storage_backend": result.get('backend', 'local')}), 200
+        current_user = db.session.get(User, current_user_id)
+        if not current_user:
+            return jsonify({"message": "User not found"}), 404
+
+        org_id = current_user.org_id
+        if not org_id:
+            return jsonify({"message": "No organization associated with this account"}), 400
+
+        org = db.session.get(Organization, org_id)
+        if not org:
+            return jsonify({"message": "Organization not found"}), 404
+
+        if file:
+            from app.infrastructure.storage import storage
+            ext = os.path.splitext(file.filename)[1].lower()
+            allowed_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico']
+            if ext not in allowed_extensions:
+                return jsonify({"message": f"Unsupported file extension '{ext}'. Allowed: {', '.join(allowed_extensions)}"}), 400
+
+            target_name = f"org_{org.id}_{asset_type}{ext}"
+            result = storage.save_file(file, filename=target_name, subfolder="branding")
+            file_url = result['url']
+            
+            if asset_type == 'logo':
+                org.logo_url = file_url
+            else:
+                org.favicon_url = file_url
+                
+            db.session.commit()
+            
+            try:
+                from app.domain.services.document_branding_service import DocumentBrandingService
+                DocumentBrandingService.invalidate_cache(org.id)
+            except Exception:
+                pass
+
+            try:
+                log_action(current_user.id, "UPDATE_BRANDING", org.id, "organizations", org.id, {"type": asset_type})
+            except Exception:
+                pass
+            
+            return jsonify({"url": file_url, "storage_backend": result.get('backend', 'local')}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"message": f"Upload failed: {str(e)}", "status": "error"}), 500
 
 @admin_bp.route('/storage/status', methods=['GET'])
 @admin_required

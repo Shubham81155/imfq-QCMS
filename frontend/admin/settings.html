@@ -7038,7 +7038,7 @@ console.log(data);
 
     <script src="/assets/dist/bootstrap.bundle.min.js"></script>
     <script src="/assets/dist/core-bundle.39698204.min.js"></script>
-    <script src="/assets/dist/platform-settings.b193b128.min.js"></script>
+    <script src="/assets/dist/platform-settings.4dd75201.min.js"></script>
     <script>
     const settingsManager = {
         isDirty: false,
@@ -9217,33 +9217,65 @@ ET`;
                 
                 // Multi-fallback token retrieval
                 const token = (window.api && window.api.token) || sessionStorage.getItem('token') || sessionStorage.getItem('access_token') || localStorage.getItem('token') || localStorage.getItem('access_token') || '';
-                const response = await fetch('/api/admin/org-branding/upload', {
-                    method: 'POST',
-                    headers: token ? {
-                        'Authorization': `Bearer ${token}`
-                    } : {},
-                    body: formData
-                });
-
+                
+                let response;
                 let res = {};
-                const contentType = response.headers.get('content-type') || '';
-                if (contentType.includes('application/json')) {
+
+                // Attempt primary endpoint: /api/admin/org-branding/upload
+                try {
+                    response = await fetch('/api/admin/org-branding/upload', {
+                        method: 'POST',
+                        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+                        body: formData
+                    });
+                    const contentType = response.headers.get('content-type') || '';
+                    if (contentType.includes('application/json')) {
+                        res = await response.json().catch(() => ({}));
+                    }
+                } catch (netErr) {
+                    console.warn('[Settings] Primary upload endpoint network error:', netErr);
+                }
+
+                // If primary endpoint failed or returned non-200/HTML, try secondary fallback endpoint: /api/document-identity/upload-logo
+                if (!response || !response.ok || !res.url) {
                     try {
-                        res = await response.json();
+                        const fallbackFd = new FormData();
+                        fallbackFd.append('file', file);
+                        fallbackFd.append('logo_file', file);
+                        fallbackFd.append('type', type);
+                        fallbackFd.append('asset_type', type);
+                        const fbResponse = await fetch('/api/document-identity/upload-logo', {
+                            method: 'POST',
+                            headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+                            body: fallbackFd
+                        });
+                        const fbCt = fbResponse.headers.get('content-type') || '';
+                        let fbRes = {};
+                        if (fbCt.includes('application/json')) {
+                            fbRes = await fbResponse.json().catch(() => ({}));
+                        }
+                        if (fbResponse.ok && (fbRes.url || fbRes.asset_url || fbRes.logo_url)) {
+                            response = fbResponse;
+                            res = {
+                                url: fbRes.url || fbRes.asset_url || fbRes.logo_url,
+                                status: 'success'
+                            };
+                        }
                     } catch (_) {}
                 }
 
-                if (!response.ok) {
-                    if (response.status === 401 || response.status === 403) {
+                if (!response || !response.ok || !res.url) {
+                    const status = response ? response.status : 0;
+                    if (status === 401 || status === 403) {
                         throw new Error('Your session has expired or you do not have permission to upload branding assets. Please log in again.');
                     }
-                    if (response.status === 413) {
+                    if (status === 413) {
                         throw new Error('The uploaded file is too large for the server. Please select a smaller file (under 2MB).');
                     }
-                    if (response.status === 500 || response.status === 502 || response.status === 503) {
+                    if (status === 500 || status === 502 || status === 503) {
                         throw new Error('Server error encountered while processing image. Please try again later.');
                     }
-                    throw new Error(res.message || res.msg || `Upload failed (Status ${response.status})`);
+                    throw new Error(res.message || res.msg || (status ? `Upload failed (Status ${status})` : 'Network connection failed'));
                 }
 
                 if (window.OctaQube && typeof OctaQube.toast === 'function') {

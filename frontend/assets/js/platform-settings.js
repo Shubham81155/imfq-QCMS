@@ -1042,7 +1042,7 @@ const PlatformSettings = {
                 data = await res.json().catch(() => ({}));
             } else {
                 if (res.status === 413) {
-                    throw new Error('Image file is too large for the server. Please upload an image under 10 MB.');
+                    throw new Error('Image file is too large for the server. Please upload an image under 20 MB.');
                 } else if (res.status === 401 || res.status === 403) {
                     throw new Error('Your session has expired or you do not have permission. Please log in again.');
                 } else if (res.status === 404) {
@@ -2285,8 +2285,24 @@ const PlatformSettings = {
                     body: fd
                 });
 
-                const res = await response.json();
+                let res = {};
+                const contentType = response.headers.get('content-type') || '';
+                if (contentType.includes('application/json')) {
+                    try {
+                        res = await response.json();
+                    } catch (_) {}
+                }
+
                 if (!response.ok || res.status !== 'success') {
+                    if (response.status === 401 || response.status === 403) {
+                        throw new Error('Your session has expired or you do not have permission. Please log in again.');
+                    }
+                    if (response.status === 413) {
+                        throw new Error('The uploaded file is too large for the server. Please select a smaller file (under 2MB).');
+                    }
+                    if (response.status >= 500) {
+                        throw new Error('Server error encountered while processing image. Please try again later.');
+                    }
                     throw new Error(res.message || 'File upload failed');
                 }
 
