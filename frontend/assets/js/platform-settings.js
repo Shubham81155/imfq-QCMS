@@ -989,11 +989,11 @@ const PlatformSettings = {
         if (!input || !input.files || input.files.length === 0) return;
         const file = input.files[0];
 
-        // 1. Client-side Validation (20 MB Limit)
-        const maxLimitBytes = 20 * 1024 * 1024; // 20 MB
+        // 1. Client-side Validation (5 MB Limit)
+        const maxLimitBytes = 5 * 1024 * 1024; // 5 MB
+        const actualMb = (file.size / (1024 * 1024)).toFixed(2);
         if (file.size > maxLimitBytes) {
-            const actualMb = (file.size / (1024 * 1024)).toFixed(1);
-            const msg = `Selected image is ${actualMb} MB, which exceeds the 20 MB limit. Please select an image under 20 MB.`;
+            const msg = `Selected image is ${actualMb} MB, which exceeds the 5 MB limit. Please select an image under 5 MB.`;
             if (window.OctaQube && OctaQube.toast) {
                 OctaQube.toast(msg, 'error');
             } else {
@@ -1047,7 +1047,7 @@ const PlatformSettings = {
 
             if (!res.ok || !data.image_url) {
                 if (res.status === 413 || data.code === 413) {
-                    throw new Error(data.message || 'Image file is too large for the server. Please upload an image under 20 MB.');
+                    throw new Error(data.message || `Image file is too large for the server. Selected image is ${actualMb} MB (limit: 5 MB). Please upload an image under 5 MB.`);
                 } else if (res.status === 401 || res.status === 403) {
                     throw new Error('Your session has expired or you do not have permission. Please log in again.');
                 } else if (res.status === 404) {
