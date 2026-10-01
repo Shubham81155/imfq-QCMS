@@ -2,9 +2,9 @@ name: QCMS Enterprise CI & Security Quality Gate
 
 on:
   push:
-    branches: [main, master, develop, staging]
+    branches: [main, master, develop, staging, shubham, Shubham]
   pull_request:
-    branches: [main, master, develop, staging]
+    branches: [main, master, develop, staging, shubham, Shubham]
   workflow_dispatch:
 
 concurrency:
