@@ -16,6 +16,15 @@
     <script src="/assets/dist/lucide.min.js"></script>
     <script src="/assets/dist/qcms-8s-manual-pack.0cd4b5f0.min.js"></script>
     <script>
+    function safeJsonParse(raw, fallback) {
+        if (!raw || typeof raw !== 'string') return fallback || {};
+        try {
+            return JSON.parse(raw);
+        } catch (_) {
+            return fallback || {};
+        }
+    }
+
     function sanitizeUserForStorage(userObj) {
         if (!userObj || typeof userObj !== 'object') return userObj;
         var safe = Object.assign({}, userObj);
@@ -7028,8 +7037,8 @@ console.log(data);
     </style>
 
     <script src="/assets/dist/bootstrap.bundle.min.js"></script>
-    <script src="/assets/dist/core-bundle.662dddd7.min.js"></script>
-    <script src="/assets/dist/platform-settings.64c11081.min.js"></script>
+    <script src="/assets/dist/core-bundle.39698204.min.js"></script>
+    <script src="/assets/dist/platform-settings.bbe1df56.min.js"></script>
     <script>
     const settingsManager = {
         isDirty: false,
@@ -7067,7 +7076,7 @@ console.log(data);
                 return;
             }
             
-            const user = JSON.parse(userStr);
+            const user = safeJsonParse(userStr, {});
             this.currentUser = user;
             const role = window.OctaQube && window.OctaQube.normalizeRole ? window.OctaQube.normalizeRole(user.role) : (user.role || 'Team Member');
             const isAdmin = ['Admin', 'SuperAdmin'].includes(role);
@@ -7834,14 +7843,28 @@ console.log(data);
 
             try {
                 OctaQube.toast('Uploading avatar...', 'info');
-                const token = sessionStorage.getItem('token') || localStorage.getItem('token');
-                const response = await fetch(`${api.baseUrl || '/api'}/auth/profile`, {
+                const token = (window.api && window.api.token) || sessionStorage.getItem('token') || sessionStorage.getItem('access_token') || localStorage.getItem('token') || localStorage.getItem('access_token') || '';
+                const response = await fetch(`${(window.api && window.api.baseUrl) || '/api'}/auth/profile`, {
                     method: 'PUT',
-                    headers: { 'Authorization': `Bearer ${token}` },
+                    headers: token ? { 'Authorization': `Bearer ${token}` } : {},
                     body: formData
                 });
-                const res = await response.json();
-                if (!response.ok) throw new Error(res.message || res.msg || 'Upload failed');
+                let res = {};
+                const contentType = response.headers.get('content-type') || '';
+                if (contentType.includes('application/json')) {
+                    try {
+                        res = await response.json();
+                    } catch (_) {}
+                }
+                if (!response.ok) {
+                    if (response.status === 401 || response.status === 403) {
+                        throw new Error('Your session has expired. Please log in again.');
+                    }
+                    if (response.status === 413) {
+                        throw new Error('Avatar file size exceeds server limit. Please select a smaller photo.');
+                    }
+                    throw new Error(res.message || res.msg || `Upload failed (Status ${response.status})`);
+                }
                 
                 const newAvatarUrl = res.profile_picture || '/assets/img/avatar-placeholder.png';
                 const previewEl = document.getElementById('personal_avatar_preview');
@@ -7850,13 +7873,13 @@ console.log(data);
                 }
                 
                 // Update session
-                const user = JSON.parse(sessionStorage.getItem('user') || localStorage.getItem('user') || '{}');
+                const user = safeJsonParse(sessionStorage.getItem('user') || localStorage.getItem('user'), {});
                 user.profile_picture = res.profile_picture;
                 const synchedUser = JSON.stringify(sanitizeUserForStorage(user));
                 sessionStorage.setItem('user', synchedUser);
                 localStorage.setItem('user', synchedUser);
-                OctaQube.user = user;
-                if (typeof OctaQube.renderNavbar === 'function') {
+                if (window.OctaQube) OctaQube.user = user;
+                if (typeof OctaQube !== 'undefined' && typeof OctaQube.renderNavbar === 'function') {
                     OctaQube.renderNavbar(); // Refresh navbar avatar
                 }
                 OctaQube.toast('Avatar updated successfully.', 'success');
@@ -8087,7 +8110,7 @@ console.log(data);
                     try {
                         const userStr = sessionStorage.getItem('user') || localStorage.getItem('user');
                         if (userStr) {
-                            const uObj = JSON.parse(userStr);
+                            const uObj = safeJsonParse(userStr, {});
                             if (settings.name) uObj.org_name = settings.name;
                             if (settings.logo_url) uObj.org_logo_url = settings.logo_url;
                             if (settings.favicon_url) uObj.org_favicon_url = settings.favicon_url;
@@ -8318,7 +8341,11 @@ console.log(data);
             try {
                 const token = sessionStorage.getItem('token') || localStorage.getItem('token') || '';
                 const res = await fetch('/api/document-identity/all', { headers: { 'Authorization': `Bearer ${token}` } });
-                const result = await res.json();
+                let result = {};
+                const ct = res.headers.get('content-type') || '';
+                if (ct.includes('application/json')) {
+                    try { result = await res.json(); } catch (_) {}
+                }
                 if (result.status === 'success') {
                     ctx = result.branding_context || {};
                     tmpl = (result.templates && result.templates.invoice) || {};
@@ -8643,7 +8670,7 @@ ET`;
                         language: lang
                     });
                     
-                    const user = JSON.parse(sessionStorage.getItem('user') || localStorage.getItem('user') || '{}');
+                    const user = safeJsonParse(sessionStorage.getItem('user') || localStorage.getItem('user'), {});
                     user.full_name = name;
                     user.language = lang;
                     const synchedUser = JSON.stringify(sanitizeUserForStorage(user));
@@ -8739,7 +8766,7 @@ ET`;
                 // Update session storage so branding applies immediately
                 const userStr = sessionStorage.getItem('user') || localStorage.getItem('user');
                 if (userStr) {
-                    const user = JSON.parse(userStr);
+                    const user = safeJsonParse(userStr, {});
                     user.org_primary_color = payload.primary_color;
                     user.org_logo_url = payload.logo_url;
                     user.org_favicon_url = payload.favicon_url;
@@ -9190,16 +9217,66 @@ ET`;
                 
                 // Multi-fallback token retrieval
                 const token = (window.api && window.api.token) || sessionStorage.getItem('token') || sessionStorage.getItem('access_token') || localStorage.getItem('token') || localStorage.getItem('access_token') || '';
-                const response = await fetch('/api/admin/org-branding/upload', {
-                    method: 'POST',
-                    headers: token ? {
-                        'Authorization': `Bearer ${token}`
-                    } : {},
-                    body: formData
-                });
+                
+                let response;
+                let res = {};
 
-                const res = await response.json();
-                if (!response.ok) throw new Error(res.message || res.msg || 'Upload failed');
+                // Attempt primary endpoint: /api/admin/org-branding/upload
+                try {
+                    response = await fetch('/api/admin/org-branding/upload', {
+                        method: 'POST',
+                        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+                        body: formData
+                    });
+                    const contentType = response.headers.get('content-type') || '';
+                    if (contentType.includes('application/json')) {
+                        res = await response.json().catch(() => ({}));
+                    }
+                } catch (netErr) {
+                    console.warn('[Settings] Primary upload endpoint network error:', netErr);
+                }
+
+                // If primary endpoint failed or returned non-200/HTML, try secondary fallback endpoint: /api/document-identity/upload-logo
+                if (!response || !response.ok || !res.url) {
+                    try {
+                        const fallbackFd = new FormData();
+                        fallbackFd.append('file', file);
+                        fallbackFd.append('logo_file', file);
+                        fallbackFd.append('type', type);
+                        fallbackFd.append('asset_type', type);
+                        const fbResponse = await fetch('/api/document-identity/upload-logo', {
+                            method: 'POST',
+                            headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+                            body: fallbackFd
+                        });
+                        const fbCt = fbResponse.headers.get('content-type') || '';
+                        let fbRes = {};
+                        if (fbCt.includes('application/json')) {
+                            fbRes = await fbResponse.json().catch(() => ({}));
+                        }
+                        if (fbResponse.ok && (fbRes.url || fbRes.asset_url || fbRes.logo_url)) {
+                            response = fbResponse;
+                            res = {
+                                url: fbRes.url || fbRes.asset_url || fbRes.logo_url,
+                                status: 'success'
+                            };
+                        }
+                    } catch (_) {}
+                }
+
+                if (!response || !response.ok || !res.url) {
+                    const status = response ? response.status : 0;
+                    if (status === 401 || status === 403) {
+                        throw new Error('Your session has expired or you do not have permission to upload branding assets. Please log in again.');
+                    }
+                    if (status === 413) {
+                        throw new Error('The uploaded file is too large for the server. Please select a smaller file (under 2MB).');
+                    }
+                    if (status === 500 || status === 502 || status === 503) {
+                        throw new Error('Server error encountered while processing image. Please try again later.');
+                    }
+                    throw new Error(res.message || res.msg || (status ? `Upload failed (Status ${status})` : 'Network connection failed'));
+                }
 
                 if (window.OctaQube && typeof OctaQube.toast === 'function') {
                     OctaQube.toast(`${type.charAt(0).toUpperCase() + type.slice(1)} uploaded successfully!`, 'success');
@@ -9208,18 +9285,18 @@ ET`;
                 // Update input and preview with cache-busting timestamp so the browser
                 // re-fetches the newly uploaded image even if the URL is identical to the old one.
                 const urlInput = document.getElementById(`${type}_url`);
-                if (urlInput) urlInput.value = res.url;
+                if (urlInput && res.url) urlInput.value = res.url;
 
-                const timestampedUrl = res.url + (res.url.includes('?') ? '&' : '?') + 't=' + Date.now();
+                const timestampedUrl = (res.url || '') + ((res.url && res.url.includes('?')) ? '&' : '?') + 't=' + Date.now();
 
                 const previewImg = document.getElementById(`${type}_preview`);
-                if (previewImg) {
+                if (previewImg && res.url) {
                     previewImg.onerror = function() { this.onerror = null; this.src = FALLBACK_SVG; };
                     previewImg.src = timestampedUrl;
                 }
 
                 // Immediately update sidebar brand logo so changes are visible without page refresh
-                if (type === 'logo') {
+                if (type === 'logo' && res.url) {
                     document.querySelectorAll('.sidebar-brand').forEach(sb => {
                         let sidebarImg = sb.querySelector('img');
                         if (sidebarImg) {
@@ -9241,16 +9318,18 @@ ET`;
                 }
 
                 // Sync with currentUser in session/local storage for real-time header reflection
-                try {
-                    const uStr = sessionStorage.getItem('user') || localStorage.getItem('user');
-                    if (uStr) {
-                        const u = JSON.parse(uStr);
-                        if (type === 'logo') u.org_logo_url = res.url;
-                        if (type === 'favicon') u.org_favicon_url = res.url;
-                        sessionStorage.setItem('user', JSON.stringify(sanitizeUserForStorage(u)));
-                        localStorage.setItem('user', JSON.stringify(sanitizeUserForStorage(u)));
-                    }
-                } catch (_) {}
+                if (res.url) {
+                    try {
+                        const uStr = sessionStorage.getItem('user') || localStorage.getItem('user');
+                        if (uStr) {
+                            const u = safeJsonParse(uStr, {});
+                            if (type === 'logo') u.org_logo_url = res.url;
+                            if (type === 'favicon') u.org_favicon_url = res.url;
+                            sessionStorage.setItem('user', JSON.stringify(sanitizeUserForStorage(u)));
+                            localStorage.setItem('user', JSON.stringify(sanitizeUserForStorage(u)));
+                        }
+                    } catch (_) {}
+                }
                 
                 this.isDirty = true;
                 const unsavedBadge = document.getElementById('unsaved-badge');
@@ -9351,7 +9430,7 @@ ET`;
             try {
                 const res = await api.put('/admin/role-permissions', { permissions: newPerms });
                 if (res && res.status === 'success') {
-                    const user = JSON.parse(sessionStorage.getItem('user') || localStorage.getItem('user') || '{}');
+                    const user = safeJsonParse(sessionStorage.getItem('user') || localStorage.getItem('user'), {});
                     user.role_permissions = newPerms;
                     sessionStorage.setItem('user', JSON.stringify(sanitizeUserForStorage(user)));
                     localStorage.setItem('user', JSON.stringify(sanitizeUserForStorage(user)));

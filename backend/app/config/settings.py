@@ -63,7 +63,7 @@ class Config:
         UPLOAD_FOLDER = '/tmp/uploads'
     else:
         UPLOAD_FOLDER = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'uploads'))
-    MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB limit
+    MAX_CONTENT_LENGTH = int(os.getenv('MAX_CONTENT_LENGTH', 20 * 1024 * 1024))  # 20MB limit
     
     # CORS Configuration - explicit origin whitelist
     CORS_ORIGINS = os.getenv(

@@ -163,18 +163,22 @@ jobs:
             echo "[OctaQube CD] Running database schema synchronization..."
             docker compose -f "$COMPOSE_FILE" exec -T backend python -m app.infrastructure.database.migrations.runner
 
-            # 7. Frontend Refresh & Gateway Nginx Routing Fix
+            # 7. Frontend Refresh & Gateway Nginx Routing & Upload Size Fix
             echo "[OctaQube CD] Reloading frontend container..."
             timeout 10s docker exec qcms-frontend nginx -s reload 2>/dev/null || true
 
-            echo "[OctaQube CD] Ensuring Gateway Nginx routes octaqube.ifqm.org.in to qcms-frontend..."
+            echo "[OctaQube CD] Ensuring Gateway Nginx routes octaqube.ifqm.org.in to qcms-frontend and allows 5M uploads..."
             timeout 10s docker exec ifqm-skills sed -i 's/octaqube-coming-soon/qcms-frontend/g' /etc/nginx/conf.d/default.conf 2>/dev/null || true
+            timeout 10s docker exec ifqm-skills sed -i '/client_max_body_size/d' /etc/nginx/conf.d/default.conf 2>/dev/null || true
+            timeout 10s docker exec ifqm-skills sed -i '/server_name/a \    client_max_body_size 5M;' /etc/nginx/conf.d/default.conf 2>/dev/null || true
             timeout 10s docker exec ifqm-skills nginx -t 2>/dev/null && timeout 10s docker exec ifqm-skills nginx -s reload 2>/dev/null || true
 
             # Also persist fix in any mounted gateway config files if present
             timeout 10s grep -rn "octaqube-coming-soon" /opt/ifqm* /etc/nginx 2>/dev/null | cut -d: -f1 | sort -u | while read -r conf_file; do
               echo "[OctaQube CD] Patching host config: $conf_file"
               sed -i 's/octaqube-coming-soon/qcms-frontend/g' "$conf_file" 2>/dev/null || true
+              sed -i '/client_max_body_size/d' "$conf_file" 2>/dev/null || true
+              sed -i '/server_name/a \    client_max_body_size 5M;' "$conf_file" 2>/dev/null || true
             done
 
             # 8. Service Health Probes (Backend & Frontend)
