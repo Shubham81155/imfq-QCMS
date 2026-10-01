@@ -989,12 +989,15 @@ const PlatformSettings = {
         if (!input || !input.files || input.files.length === 0) return;
         const file = input.files[0];
 
-        // 1. Client-side Validation
-        if (file.size > 20 * 1024 * 1024) {
+        // 1. Client-side Validation (20 MB Limit)
+        const maxLimitBytes = 20 * 1024 * 1024; // 20 MB
+        if (file.size > maxLimitBytes) {
+            const actualMb = (file.size / (1024 * 1024)).toFixed(1);
+            const msg = `Selected image is ${actualMb} MB, which exceeds the 20 MB limit. Please select an image under 20 MB.`;
             if (window.OctaQube && OctaQube.toast) {
-                OctaQube.toast('Image file exceeds 20MB limit. Please select a smaller image.', 'error');
+                OctaQube.toast(msg, 'error');
             } else {
-                alert('Image file exceeds 20MB limit.');
+                alert(msg);
             }
             input.value = '';
             return;
@@ -1040,27 +1043,25 @@ const PlatformSettings = {
             const contentType = res.headers.get('content-type') || '';
             if (contentType.includes('application/json')) {
                 data = await res.json().catch(() => ({}));
-            } else {
-                if (res.status === 413) {
-                    throw new Error('Image file is too large for the server. Please upload an image under 20 MB.');
+            }
+
+            if (!res.ok || !data.image_url) {
+                if (res.status === 413 || data.code === 413) {
+                    throw new Error(data.message || 'Image file is too large for the server. Please upload an image under 20 MB.');
                 } else if (res.status === 401 || res.status === 403) {
                     throw new Error('Your session has expired or you do not have permission. Please log in again.');
                 } else if (res.status === 404) {
                     throw new Error('Upload service endpoint not found on the server.');
                 } else {
-                    throw new Error(`Upload failed with server response (HTTP ${res.status}).`);
+                    throw new Error(data.message || data.msg || `Upload failed with server response (HTTP ${res.status}).`);
                 }
             }
 
-            if (res.ok && data.image_url) {
-                this._val('ps-cms-hero-image-url', data.image_url);
-                this.previewHeroImageUrl(data.image_url);
-                if (window.OctaQube) OctaQube.toast('Hero mockup image uploaded and applied successfully!', 'success');
-                const iframe = document.getElementById('ps-cms-iframe');
-                if (iframe) iframe.src = '/index.html?t=' + Date.now();
-            } else {
-                throw new Error(data.message || data.msg || 'Upload failed');
-            }
+            this._val('ps-cms-hero-image-url', data.image_url);
+            this.previewHeroImageUrl(data.image_url);
+            if (window.OctaQube) OctaQube.toast('Hero mockup image uploaded and applied successfully!', 'success');
+            const iframe = document.getElementById('ps-cms-iframe');
+            if (iframe) iframe.src = '/index.html?t=' + Date.now();
         } catch (e) {
             if (window.OctaQube) OctaQube.toast(e.message || 'Error uploading hero image', 'error');
             else alert(e.message || 'Error uploading hero image');
