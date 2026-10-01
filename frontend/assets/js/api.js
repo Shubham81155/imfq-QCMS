@@ -253,7 +253,11 @@ const api = {
                 clearTimeout(timeoutId);
 
                 if (endpoint.includes('/auth/login')) {
-                    const data = await response.clone().json().catch(() => ({}));
+                    let data = {};
+                    const ct = response.headers.get('content-type') || '';
+                    if (ct.includes('application/json')) {
+                        data = await response.clone().json().catch(() => ({}));
+                    }
                     if (!response.ok) {
                         const error = new Error(data.message || data.msg || 'Login failed. Please check your credentials.');
                         error.errors = data.errors || [];
@@ -284,7 +288,11 @@ const api = {
                             console.warn('[API] 401 on super-admin portal for:', endpoint);
                             return null;
                         }
-                        const errData = await response.clone().json().catch(() => ({}));
+                        let errData = {};
+                        const ct = response.headers.get('content-type') || '';
+                        if (ct.includes('application/json')) {
+                            errData = await response.clone().json().catch(() => ({}));
+                        }
                         const errText = (errData.message || errData.msg || '').toLowerCase();
                         const isRevokedOrTerminated = errData.session_terminated === true || 
                             errText.includes('terminated') || 
@@ -310,7 +318,13 @@ const api = {
                     }
                 }
 
-                const data = await response.json().catch(() => ({}));
+                let data = {};
+                const contentType = response.headers.get('content-type') || '';
+                if (contentType.includes('application/json')) {
+                    data = await response.json().catch(() => ({}));
+                } else if (!response.ok) {
+                    data = { message: `Request failed (HTTP ${response.status}: ${response.statusText || 'Server Error'})` };
+                }
 
                 if (response.status === 403 && (data.error_code === 'ORGANIZATION_SUSPENDED' || data.status === 'suspended')) {
                     if (typeof window.showSuspendedOrganizationScreen === 'function') {

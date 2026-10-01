@@ -4,6 +4,21 @@
  * Integrates with /api/super-admin/settings/* endpoints.
  */
 
+// Safe JSON deserialization helper with defensive fallback to prevent SyntaxErrors from corrupted storage/HTML
+function safeJsonParse(raw, fallback = null) {
+    if (!raw || typeof raw !== 'string') return fallback;
+    try {
+        const trimmed = raw.trim();
+        if (!trimmed || trimmed.startsWith('<') || trimmed === 'undefined' || trimmed === 'null') {
+            return fallback;
+        }
+        return JSON.parse(trimmed);
+    } catch (e) {
+        console.warn('[SafeJSON] Failed to parse JSON, falling back:', e);
+        return fallback;
+    }
+}
+
 // Removes sensitive fields before storing user object in Web Storage
 function sanitizeUserForStorage(userObj) {
     if (!userObj || typeof userObj !== 'object') return userObj;
@@ -49,7 +64,7 @@ const PlatformSettings = {
     _activeTab: 'general',
 
     async init() {
-        const user = JSON.parse(sessionStorage.getItem('user') || localStorage.getItem('user') || '{}');
+        const user = safeJsonParse(sessionStorage.getItem('user') || localStorage.getItem('user'), {});
         const role = window.OctaQube && window.OctaQube.normalizeRole ? window.OctaQube.normalizeRole(user.role) : user.role;
         const isSuperAdmin = role === 'SuperAdmin';
         if (!isSuperAdmin) return;
@@ -2075,11 +2090,11 @@ const PlatformSettings = {
                 border_radius: brand.border_radius || '10px',
                 card_style: brand.card_style || 'glass',
                 button_style: brand.button_style || 'rounded',
-                assets: brand.assets || JSON.parse(localStorage.getItem('octaqube_brand_assets') || '{}')
+                assets: brand.assets || safeJsonParse(localStorage.getItem('octaqube_brand_assets'), {})
             };
         }
         this._brandingData = brand;
-        localStorage.setItem('octaqube_branding_config', JSON.stringify(brand));
+        try { localStorage.setItem('octaqube_branding_config', JSON.stringify(brand)); } catch (e) {}
         return brand;
     },
 
@@ -2097,7 +2112,7 @@ const PlatformSettings = {
             if (window.lucide) lucide.createIcons();
         }
 
-        const brand = this._brandingData || this._initBrandingData(JSON.parse(localStorage.getItem('octaqube_branding_config') || '{}'));
+        const brand = this._brandingData || this._initBrandingData(safeJsonParse(localStorage.getItem('octaqube_branding_config'), {}));
         const modePalette = (brand && brand[currentMode]) ? brand[currentMode] : (window.DEFAULT_PALETTES?.[currentMode] || {});
 
         const colorMap = [
@@ -2158,7 +2173,7 @@ const PlatformSettings = {
     applyLiveBranding(key, val) {
         if (!key || !val) return;
         const currentMode = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
-        const brand = this._brandingData || this._initBrandingData(JSON.parse(localStorage.getItem('octaqube_branding_config') || '{}'));
+        const brand = this._brandingData || this._initBrandingData(safeJsonParse(localStorage.getItem('octaqube_branding_config'), {}));
         if (!brand[currentMode]) brand[currentMode] = { ...(window.DEFAULT_PALETTES?.[currentMode] || {}) };
 
         const colorKeyMap = {
@@ -2186,7 +2201,7 @@ const PlatformSettings = {
         }
 
         this._brandingData = brand;
-        localStorage.setItem('octaqube_branding_config', JSON.stringify(brand));
+        try { localStorage.setItem('octaqube_branding_config', JSON.stringify(brand)); } catch (e) {}
 
         if (window.themeManager) {
             window.themeManager.applyModePalette(currentMode);
@@ -2196,10 +2211,10 @@ const PlatformSettings = {
     resetCurrentModePalette() {
         const currentMode = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
         const defaults = window.DEFAULT_PALETTES?.[currentMode] || {};
-        const brand = this._brandingData || this._initBrandingData(JSON.parse(localStorage.getItem('octaqube_branding_config') || '{}'));
+        const brand = this._brandingData || this._initBrandingData(safeJsonParse(localStorage.getItem('octaqube_branding_config'), {}));
         brand[currentMode] = { ...defaults };
         this._brandingData = brand;
-        localStorage.setItem('octaqube_branding_config', JSON.stringify(brand));
+        try { localStorage.setItem('octaqube_branding_config', JSON.stringify(brand)); } catch (e) {}
 
         if (window.themeManager) {
             window.themeManager.applyModePalette(currentMode);
@@ -2281,19 +2296,19 @@ const PlatformSettings = {
                 }
 
                 // 3. Persist clean server URL in localStorage
-                const assets = JSON.parse(localStorage.getItem('octaqube_brand_assets') || '{}');
+                const assets = safeJsonParse(localStorage.getItem('octaqube_brand_assets'), {});
                 assets[type] = serverUrl;
                 if (type === 'main-logo' || type === 'logo') {
                     assets['main-logo'] = serverUrl;
                     assets['logo'] = serverUrl;
                 }
-                localStorage.setItem('octaqube_brand_assets', JSON.stringify(assets));
+                try { localStorage.setItem('octaqube_brand_assets', JSON.stringify(assets)); } catch (e) {}
 
                 // 4. Update session storage with clean server URL
                 try {
                     const uStr = sessionStorage.getItem('user') || localStorage.getItem('user');
                     if (uStr) {
-                        const uObj = JSON.parse(uStr);
+                        const uObj = safeJsonParse(uStr, {});
                         if (type === 'favicon') {
                             uObj.platform_favicon_url = serverUrl;
                         } else {
@@ -2327,14 +2342,14 @@ const PlatformSettings = {
 
     removeAsset(type) {
         if (!confirm(`Are you sure you want to reset the ${type.replace('-', ' ')} to default?`)) return;
-        const assets = JSON.parse(localStorage.getItem('octaqube_brand_assets') || '{}');
+        const assets = safeJsonParse(localStorage.getItem('octaqube_brand_assets'), {});
         delete assets[type];
         if (type === 'main-logo' || type === 'logo') {
             delete assets['main-logo'];
             delete assets['logo'];
             delete assets['dark-logo'];
         }
-        localStorage.setItem('octaqube_brand_assets', JSON.stringify(assets));
+        try { localStorage.setItem('octaqube_brand_assets', JSON.stringify(assets)); } catch (e) {}
 
         // Reset Settings -> Branding preview
         const containerId = `ps-preview-${type}`;
@@ -2375,7 +2390,7 @@ const PlatformSettings = {
         try {
             const uStr = sessionStorage.getItem('user') || localStorage.getItem('user');
             if (uStr) {
-                const uObj = JSON.parse(uStr);
+                const uObj = safeJsonParse(uStr, {});
                 if (type === 'main-logo' || type === 'logo') uObj.platform_logo_url = null;
                 if (type === 'favicon') uObj.platform_favicon_url = null;
                 const uJson = JSON.stringify(sanitizeUserForStorage(uObj));
@@ -2403,13 +2418,13 @@ const PlatformSettings = {
 
     restoreSavedBranding() {
         const currentMode = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
-        const brand = this._brandingData || this._initBrandingData(JSON.parse(localStorage.getItem('octaqube_branding_config') || '{}'));
+        const brand = this._brandingData || this._initBrandingData(safeJsonParse(localStorage.getItem('octaqube_branding_config'), {}));
         if (window.themeManager) {
             window.themeManager.applyModePalette(currentMode);
         }
         this.syncBrandingInputs();
 
-        const assets = JSON.parse(localStorage.getItem('octaqube_brand_assets') || '{}');
+        const assets = safeJsonParse(localStorage.getItem('octaqube_brand_assets'), {});
         Object.keys(assets).forEach(type => {
             const containerId = `ps-preview-${type}`;
             const container = document.getElementById(containerId);
@@ -2461,7 +2476,7 @@ const PlatformSettings = {
     async saveBranding(silent = false) {
         try {
             const currentMode = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
-            const brand = this._brandingData || this._initBrandingData(JSON.parse(localStorage.getItem('octaqube_branding_config') || '{}'));
+            const brand = this._brandingData || this._initBrandingData(safeJsonParse(localStorage.getItem('octaqube_branding_config'), {}));
             if (!brand[currentMode]) brand[currentMode] = {};
 
             brand[currentMode].primary_color = this._getVal('ps-primary-color') || brand[currentMode].primary_color;
@@ -2476,18 +2491,18 @@ const PlatformSettings = {
             brand.border_radius = this._getVal('ps-border-radius') || brand.border_radius;
             brand.card_style = this._getVal('ps-card-style') || brand.card_style;
             brand.button_style = this._getVal('ps-button-style') || brand.button_style;
-            const assets = JSON.parse(localStorage.getItem('octaqube_brand_assets') || '{}');
+            const assets = safeJsonParse(localStorage.getItem('octaqube_brand_assets'), {});
             brand.assets = assets;
             if (assets['main-logo']) brand.logo_url = assets['main-logo'];
             if (assets['favicon']) brand.favicon_url = assets['favicon'];
 
             this._brandingData = brand;
-            localStorage.setItem('octaqube_branding_config', JSON.stringify(brand));
+            try { localStorage.setItem('octaqube_branding_config', JSON.stringify(brand)); } catch (e) {}
 
             try {
                 const uStr = sessionStorage.getItem('user') || localStorage.getItem('user');
                 if (uStr) {
-                    const uObj = JSON.parse(uStr);
+                    const uObj = safeJsonParse(uStr, {});
                     if (brand.logo_url) uObj.platform_logo_url = brand.logo_url;
                     if (brand.favicon_url) uObj.platform_favicon_url = brand.favicon_url;
                     const uJson = JSON.stringify(sanitizeUserForStorage(uObj));
@@ -2805,9 +2820,10 @@ Object.assign(PlatformSettings, {
     // === Footer Pages CMS Methods ===
     loadFooterPages: function(savedPages) {
         const stored = localStorage.getItem('ps-landing-cms-pages');
+        const parsedStored = safeJsonParse(stored, null);
         let data = (savedPages && Object.keys(savedPages).length > 0)
             ? savedPages
-            : (stored ? JSON.parse(stored) : {
+            : (parsedStored || {
             product: [
                 { id: 'features', title: 'Features', link: '#features', content: '' },
                 { id: 'pricing', title: 'Pricing', link: '#pricing', content: '' },
@@ -2834,7 +2850,9 @@ Object.assign(PlatformSettings, {
             ]
         });
         this.footerPagesData = data;
-        localStorage.setItem('ps-landing-cms-pages', JSON.stringify(this.footerPagesData));
+        try {
+            localStorage.setItem('ps-landing-cms-pages', JSON.stringify(this.footerPagesData));
+        } catch (e) {}
         this.renderFooterPagesList();
     },
 
@@ -3166,7 +3184,7 @@ Object.assign(PlatformSettings, {
                 OctaQube.toast(res.message || 'Super Admin credentials updated successfully!', 'success');
                 
                 // Update session memory
-                const userObj = JSON.parse(sessionStorage.getItem('user') || '{}');
+                const userObj = safeJsonParse(sessionStorage.getItem('user'), {});
                 if (newEmail) userObj.email = newEmail;
                 sessionStorage.setItem('user', JSON.stringify(sanitizeUserForStorage(userObj)));
 
