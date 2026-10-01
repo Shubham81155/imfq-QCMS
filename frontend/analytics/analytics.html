@@ -2,13 +2,13 @@
 <html lang="en">
 <head>
     <!-- Performance & Network Acceleration: Critical Preloads -->
-    <link rel="preload" href="/assets/dist/core.83f8d7cf.min.css" as="style">
+    <link rel="preload" href="/assets/dist/core.4cab001a.min.css" as="style">
     <link rel="preload" href="/assets/dist/auth-guard.bb0c9864.min.js" as="script">
     <script src="/assets/dist/auth-guard.bb0c9864.min.js"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Performance Analytics | OctaQube Enterprise</title>
-    <link rel="stylesheet" href="/assets/dist/core.83f8d7cf.min.css">
+    <link rel="stylesheet" href="/assets/dist/core.4cab001a.min.css">
     <script src="/assets/dist/breadcrumbs.cb905230.min.js"></script>
     <script src="/assets/dist/lucide.min.js"></script>
     <script src="/assets/dist/chart.min.js"></script>
@@ -1691,9 +1691,8 @@
                                                 <span class="fw-bold text-main text-xs text-truncate" title="${OctaQube.escapeHtml(mName)}">${OctaQube.escapeHtml(mName)}</span>
                                                 <span class="badge ${badgeClass} text-xxs flex-shrink-0 px-2 py-0.5">${OctaQube.escapeHtml(statusLabel)}</span>
                                             </div>
-                                            <div class="text-xxs text-muted text-truncate" title="${OctaQube.escapeHtml(mEmail)}">
+                                            <div class="text-xxs text-muted text-truncate" title="${OctaQube.escapeHtml(mEmail || mRole)}">
                                                 <span class="fw-medium text-secondary">${OctaQube.escapeHtml(mRole)}</span>
-                                                ${mEmail ? `<span class="opacity-75"> &bull; ${OctaQube.escapeHtml(mEmail)}</span>` : ''}
                                             </div>
                                         </div>
                                     </div>
