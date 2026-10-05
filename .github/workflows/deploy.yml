@@ -164,7 +164,12 @@ jobs:
 
             # 5. Rolling Container Replacement (Zero downtime swap)
             echo "[OctaQube CD] Launching updated containers..."
-            docker compose -f "$COMPOSE_FILE" up -d --remove-orphans
+            docker compose -f "$COMPOSE_FILE" up -d --remove-orphans || {
+              echo "[OctaQube CD ❌] Error during docker compose up - dumping backend and frontend logs:"
+              docker compose -f "$COMPOSE_FILE" logs --tail=100 backend
+              docker compose -f "$COMPOSE_FILE" logs --tail=50 frontend
+              exit 1
+            }
 
             # 6. Database Migration & Schema Synchronization (Fail on error)
             echo "[OctaQube CD] Running database schema synchronization..."
