@@ -92,14 +92,16 @@ jobs:
     steps:
       - name: "Deploy to Hostinger VPS via SSH"
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           host: ${{ secrets.HOSTINGER_VPS_IP }}
           username: ${{ secrets.HOSTINGER_SSH_USER }}
           key: ${{ secrets.HOSTINGER_SSH_PRIVATE_KEY }}
-          
           port: ${{ secrets.HOSTINGER_SSH_PORT || 22 }}
           timeout: 60s
           command_timeout: 20m
+          envs: GITHUB_TOKEN
           script: |
             set -e
 
@@ -127,8 +129,13 @@ jobs:
 
             # 3. Pull latest commit from main branch
             echo "[OctaQube CD] Fetching latest commit from origin/main..."
+            AUTH_TOKEN="${GITHUB_TOKEN:-${{ secrets.GITHUB_TOKEN }}}"
+            if [ -n "$AUTH_TOKEN" ]; then
+              git remote set-url origin "https://x-access-token:${AUTH_TOKEN}@github.com/IFQM-QCMS/imfq-QCMS.git"
+            fi
             git fetch origin main
             git reset --hard origin/main
+            git remote set-url origin "https://github.com/IFQM-QCMS/imfq-QCMS.git"
 
             # Restore production environment files
             if [ -f "$ENV_BACKUP_DIR/backend.env" ]; then
