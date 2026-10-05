@@ -88,6 +88,26 @@ class Config:
         if db_url.startswith('sqlite'):
             SQLALCHEMY_DATABASE_URI = db_url
         else:
+            has_psycopg = False
+            try:
+                import psycopg  # noqa: F401
+                has_psycopg = True
+            except ImportError:
+                pass
+
+            has_psycopg2 = False
+            try:
+                import psycopg2  # noqa: F401
+                has_psycopg2 = True
+            except ImportError:
+                pass
+
+            try:
+                import pg8000
+                has_pg8000 = True
+            except ImportError:
+                has_pg8000 = False
+
             try:
                 result = urlparse(db_url)
                 username = result.username
@@ -97,22 +117,25 @@ class Config:
                 database = result.path.lstrip('/')
                 query_string = result.query  # e.g. 'sslmode=require'
 
-                try:
-                    import pg8000
-                    has_pg8000 = True
-                except ImportError:
-                    has_pg8000 = False
-
                 # Strip non-standard parameters like pgbouncer=true that break psycopg2
                 if query_string:
                     qs_parts = [p for p in query_string.split('&') if not p.startswith('pgbouncer=') and p != 'pgbouncer']
                     query_string = '&'.join(qs_parts)
 
+                scheme = (result.scheme or '').lower()
                 if is_serverless and has_pg8000:
                     driver_prefix = "postgresql+pg8000"
                     if query_string:
                         qs_parts = [p for p in query_string.split('&') if not p.startswith('sslmode=')]
                         query_string = '&'.join(qs_parts)
+                elif 'psycopg2' in scheme or (has_psycopg2 and not has_psycopg):
+                    driver_prefix = "postgresql+psycopg2"
+                elif '+psycopg' in scheme or (has_psycopg and not has_psycopg2):
+                    driver_prefix = "postgresql+psycopg"
+                elif has_psycopg2:
+                    driver_prefix = "postgresql+psycopg2"
+                elif has_psycopg:
+                    driver_prefix = "postgresql+psycopg"
                 else:
                     driver_prefix = "postgresql"
 
@@ -125,7 +148,13 @@ class Config:
                 # Re-append query string so parameters other than sslmode are preserved
                 SQLALCHEMY_DATABASE_URI = f"{base_uri}?{query_string}" if query_string else base_uri
             except Exception as e:
-                SQLALCHEMY_DATABASE_URI = db_url
+                # Fallback to raw db_url, auto-correcting driver prefix if target driver is not installed
+                fallback_uri = db_url
+                if 'postgresql+psycopg://' in fallback_uri and not has_psycopg and has_psycopg2:
+                    fallback_uri = fallback_uri.replace('postgresql+psycopg://', 'postgresql+psycopg2://', 1)
+                elif 'postgresql+psycopg2://' in fallback_uri and not has_psycopg2 and has_psycopg:
+                    fallback_uri = fallback_uri.replace('postgresql+psycopg2://', 'postgresql+psycopg://', 1)
+                SQLALCHEMY_DATABASE_URI = fallback_uri
     else:
         # Fallback to local SQLite if PostgreSQL URL is not defined (useful for development fallback)
         SQLALCHEMY_DATABASE_URI = 'sqlite:///qcms.db'

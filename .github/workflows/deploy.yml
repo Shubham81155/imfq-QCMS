@@ -173,7 +173,11 @@ jobs:
 
             # 6. Database Migration & Schema Synchronization (Fail on error)
             echo "[OctaQube CD] Running database schema synchronization..."
-            docker compose -f "$COMPOSE_FILE" exec -T backend python -m app.infrastructure.database.migrations.runner
+            docker compose -f "$COMPOSE_FILE" exec -T backend python -m app.infrastructure.database.migrations.runner || {
+              echo "[OctaQube CD ❌] Error during migration runner - dumping backend logs:"
+              docker compose -f "$COMPOSE_FILE" logs --tail=100 backend
+              exit 1
+            }
 
             # 7. Frontend Refresh & Gateway Nginx Routing & Upload Size Fix
             echo "[OctaQube CD] Reloading frontend container..."
