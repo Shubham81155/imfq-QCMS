@@ -3,14 +3,14 @@
 
 <head>
     <!-- Performance & Network Acceleration: Critical Preloads -->
-    <link rel="preload" href="/assets/dist/core.4cab001a.min.css" as="style">
+    <link rel="preload" href="/assets/dist/core.c10f66e1.min.css" as="style">
     <link rel="preload" href="/assets/dist/auth-guard.bb0c9864.min.js" as="script">
     <script src="/assets/dist/auth-guard.bb0c9864.min.js"></script>
-
+    <script src="/assets/dist/core-bundle.16ff7d33.min.js"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sign in with OTP | OctaQube Enterprise</title>
-    <link rel="stylesheet" href="/assets/dist/core.4cab001a.min.css">
+    <link rel="stylesheet" href="/assets/dist/core.c10f66e1.min.css">
     <script src="/assets/dist/lucide.min.js"></script>
     <style>
         #ai-chat-widget,
@@ -70,12 +70,12 @@
         }
 
         .login-branding h1 {
-            font-size: 3.5rem;
-            font-weight: 900;
-            line-height: 1;
-            letter-spacing: -0.06em;
+            font-size: 2.15rem;
+            font-weight: 800;
+            line-height: 1.25;
+            letter-spacing: -0.03em;
             color: var(--ds-text-main);
-            margin: 0;
+            margin: 0.75rem 0;
             position: relative;
             z-index: 1;
         }
@@ -184,7 +184,7 @@
             }
 
             .login-branding h1 {
-                font-size: 2.5rem;
+                font-size: 1.65rem;
                 text-align: center;
             }
 
@@ -201,9 +201,12 @@
         <div class="login-branding">
             <div style="margin-bottom: auto;">
                 <div class="brand-text" id="loginBrandHeader"
-                    style="font-size: 1.1rem; opacity: 0.8; font-weight: 700; display:flex; align-items:center; gap:8px;">
-                    <span id="loginBrandLogoSlot" style="display:flex;align-items:center;"><i data-lucide="shield-check" style="width:20px; height:20px;"></i></span>
-                    <span id="loginBrandShortName">OctaQube</span> <small id="loginBrandTagline" style="font-size: 0.75rem; opacity: 0.6; font-weight: 500;">ENTERPRISE</small>
+                    style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px;">
+                    <span id="loginBrandLogoSlot" style="display: flex; align-items: center; min-height: 64px; margin-bottom: 6px;">
+                        <img src="/uploads/branding/logo_1791366231_ctaQube_Gradient_Community_Logo.png" alt="Logo" style="height:64px; max-height:80px; width:auto; max-width:280px; object-fit:contain; display:block;" onerror="this.outerHTML='<i data-lucide=\'shield-check\' style=\'width:56px;height:56px;color:var(--ds-accent, #C4A25A);\'></i>'; if(window.lucide) lucide.createIcons();">
+                    </span>
+                    <span id="loginBrandShortName" style="display: none !important;">OctaQube</span>
+                    <div id="loginBrandTagline" style="font-size: 0.75rem; opacity: 0.7; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; line-height: 1.4; color: var(--ds-text-secondary); margin-top: 4px; margin-bottom: 8px;">ENTERPRISE QUALITY & COMPLIANCE MANAGEMENT SYSTEM</div>
                 </div>
             </div>
             <h1 id="loginPlatformTitle">Quality Management System</h1>
@@ -271,7 +274,6 @@
         </div>
     </div>
 
-    <script src="/assets/dist/core-bundle.39698204.min.js"></script>
     <script src="/assets/dist/enterprise-validator.min.js"></script>
     <script>
         let _otpStep = 1;
@@ -572,16 +574,33 @@
             });
 
             if (window.lucide) lucide.createIcons();
+            initOtpPage();
+        });
+
+        async function initOtpPage() {
             try {
-                const url = api.baseUrl + '/auth/login-config';
-                const res = await fetch(url);
-                if (!res.ok) return;
-                const data = await res.json();
-                const b = data.branding || {};
+                const savedConfig = JSON.parse(localStorage.getItem('octaqube_branding_config') || '{}');
+                const savedAssets = JSON.parse(localStorage.getItem('octaqube_brand_assets') || '{}');
+                applyOtpBrandingData({ ...savedConfig, assets: savedAssets });
+            } catch (_) {}
+
+            try {
+                const baseUrl = (window.api && window.api.baseUrl) ? window.api.baseUrl : '/api';
+                const res = await fetch(baseUrl + '/auth/login-config');
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.branding) applyOtpBrandingData(data.branding);
+                }
+            } catch (_) {}
+        }
+
+        function applyOtpBrandingData(b) {
+            if (!b) return;
+            try {
                 const shortName = b.software_short_name || 'OctaQube';
                 const softName  = b.software_name || 'OctaQube Enterprise';
                 const platTitle = b.platform_title || 'Quality Management System';
-                const tagline   = b.platform_subtitle || b.tagline || 'ENTERPRISE';
+                const tagline   = b.platform_subtitle || b.tagline || 'ENTERPRISE QUALITY & COMPLIANCE MANAGEMENT SYSTEM';
 
                 const brandShortEl = document.getElementById('loginBrandShortName');
                 if (brandShortEl) brandShortEl.textContent = shortName;
@@ -597,11 +616,21 @@
 
                 document.title = 'Sign in with OTP | ' + softName;
 
+                let logoSrc = b.platform_logo_url || b.logo_url || b.assets?.['main-logo'] || b.assets?.['logo'];
+                if (!logoSrc || logoSrc.includes('/assets/img/logo.png')) {
+                    try {
+                        const savedAssets = JSON.parse(localStorage.getItem('octaqube_brand_assets') || '{}');
+                        logoSrc = savedAssets['main-logo'] || savedAssets['logo'] || logoSrc;
+                    } catch (_) {}
+                }
+
                 const logoSlot = document.getElementById('loginBrandLogoSlot');
                 if (logoSlot) {
-                    const logoSrc = b.platform_logo_url || b.logo_url;
-                    if (logoSrc && !logoSrc.includes('/assets/img/logo.png')) {
-                        logoSlot.innerHTML = '<img src="' + logoSrc + '" alt="' + shortName + ' Logo" style="height:22px; max-width:120px; object-fit:contain;" onerror="this.outerHTML=\'<i data-lucide=\\\'shield-check\\\' style=\\\width:20px;height:20px;\\\'></i>\'; if(window.lucide) lucide.createIcons();">';
+                    if (logoSrc && logoSrc !== 'null' && logoSrc !== 'None' && !logoSrc.includes('/assets/img/logo.png')) {
+                        const logoSrcWithBust = logoSrc.includes('/uploads/') ? (logoSrc + (logoSrc.includes('?') ? '&' : '?') + 't=' + Date.now()) : logoSrc;
+                        logoSlot.innerHTML = `<img src="${logoSrcWithBust}" alt="${shortName} Logo" style="height:64px; max-height:80px; width:auto; max-width:280px; object-fit:contain; display:block;" onerror="this.outerHTML='<i data-lucide=\'shield-check\' style=\'width:56px;height:56px;color:var(--ds-accent, #C4A25A);\'></i>'; if(window.lucide) lucide.createIcons();">`;
+                    } else {
+                        logoSlot.innerHTML = '<i data-lucide="shield-check" style="width:56px; height:56px; color:var(--ds-accent, #C4A25A);"></i>';
                     }
                 }
 
@@ -612,7 +641,11 @@
 
                 if (window.lucide) lucide.createIcons();
             } catch (_) {}
-        });
+        }
+
+        if (document.readyState !== 'loading') {
+            initOtpPage();
+        }
     </script>
 </body>
 

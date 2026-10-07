@@ -1090,39 +1090,12 @@ const OctaQube = {
                     ? logoUrl + (logoUrl.includes('?') ? '&' : '?') + 't=' + Date.now()
                     : logoUrl;
                 const logoSrc = OctaQube.sanitizeUrl(rawLogoSrc);
-                const logoOnError = function() {
-                    this.remove();
-                    const fb = sidebarBrand.querySelector('.brand-icon');
-                    if (fb) fb.style.display = 'flex';
-                };
-
                 if (logoSrc) {
-                    let img = sidebarBrand.querySelector('img');
-                    if (!img) {
-                        const brandIcon = sidebarBrand.querySelector('.brand-icon');
-                        if (brandIcon) {
-                            const newImg = document.createElement('img');
-                            newImg.src = logoSrc;
-                            newImg.alt = '';
-                            newImg.style.cssText = 'width: 32px; height: 32px; object-fit: contain; border-radius: 8px;';
-                            newImg.onerror = function() {
-                                this.remove();
-                                brandIcon.style.display = 'flex';
-                            };
-                            brandIcon.style.display = 'none';
-                            brandIcon.parentNode.insertBefore(newImg, brandIcon);
-                        } else {
-                            sidebarBrand.innerHTML = `<img src="${logoSrc}" alt="" style="width: 32px; height: 32px; object-fit: contain; border-radius: 8px;" onerror="this.remove(); const fb=this.parentElement?.querySelector('.brand-icon'); if(fb) fb.style.display='flex';">
-                                                      <div class="brand-icon" style="background: var(--ds-accent); display: none; width: 32px; height: 32px; border-radius: 8px; align-items: center; justify-content: center;">
-                                                          <i data-lucide="${isSuperAdmin ? 'shield-check' : 'building-2'}" style="color:white; width:18px; height:18px;"></i>
-                                                      </div>
-                                                      <div class="brand-text">${OctaQube.escapeHtml(shortName)} <small style="color:var(--ds-accent); opacity:1;">${OctaQube.escapeHtml(displaySub)}</small></div>`;
-                            if (window.lucide) lucide.createIcons();
-                        }
-                    } else {
-                        img.onerror = logoOnError;
-                        img.src = logoSrc;
-                    }
+                    sidebarBrand.innerHTML = `<img src="${logoSrc}" alt="Logo" style="height: 52px; max-height: 58px; width: 100%; max-width: 100%; object-fit: contain; border-radius: 8px; display: block;" onerror="this.remove(); const fb=this.parentElement?.querySelector('.brand-icon'); if(fb) fb.style.display='flex';">
+                                              <div class="brand-icon" style="background: var(--ds-accent); display: none; width: 36px; height: 36px; border-radius: 8px; align-items: center; justify-content: center;">
+                                                  <i data-lucide="${isSuperAdmin ? 'shield-check' : 'building-2'}" style="color:white; width:20px; height:20px;"></i>
+                                              </div>`;
+                    if (window.lucide) lucide.createIcons();
                 }
             }
         }
@@ -2174,11 +2147,13 @@ const OctaQube = {
                 const safeLogoUrl = this.sanitizeUrl ? this.sanitizeUrl(resolvedLogoUrl) : (window.OctaQube && window.OctaQube.sanitizeUrl ? window.OctaQube.sanitizeUrl(resolvedLogoUrl) : resolvedLogoUrl);
                 if (safeLogoUrl) {
                     logoIconHtml = `
-                        <img src="${safeLogoUrl}" alt="" style="width: 32px; height: 32px; object-fit: contain; border-radius: 8px;" onerror="this.remove(); const fb = this.parentElement ? this.parentElement.querySelector('.fallback-brand-icon') : null; if (fb) fb.style.display='flex';">
-                        <div class="brand-icon fallback-brand-icon" style="background: var(--ds-accent); display: none; width: 32px; height: 32px; border-radius: 8px; align-items: center; justify-content: center;">
-                            <i data-lucide="${isSuperAdmin ? 'shield-check' : 'building-2'}" style="color:white; width:18px; height:18px;"></i>
+                        <img src="${safeLogoUrl}" alt="Logo" style="height: 52px; max-height: 58px; width: 100%; max-width: 100%; object-fit: contain; border-radius: 8px; display: block;" onerror="this.remove(); const fb = this.parentElement ? this.parentElement.querySelector('.fallback-brand-icon') : null; if (fb) fb.style.display='flex';">
+                        <div class="brand-icon fallback-brand-icon" style="background: var(--ds-accent); display: none; width: 36px; height: 36px; border-radius: 8px; align-items: center; justify-content: center;">
+                            <i data-lucide="${isSuperAdmin ? 'shield-check' : 'building-2'}" style="color:white; width:20px; height:20px;"></i>
                         </div>
                     `;
+                    // When custom logo is present, remove the word OctaQube!
+                    brandNameHtml = '';
                 }
             } catch (err) {
                 console.warn('[renderSidebar] Logo URL resolution error:', err);
@@ -2186,7 +2161,7 @@ const OctaQube = {
         }
 
         const brandHtml = `
-            <a href="${this.getDashboardUrl(roleName)}" class="sidebar-brand" style="text-decoration: none; color: inherit; display: flex; align-items: center; cursor: pointer;">
+            <a href="${this.getDashboardUrl(roleName)}" class="sidebar-brand" style="text-decoration: none; color: inherit; display: flex; align-items: center; justify-content: center; width: 100%; cursor: pointer;">
                 ${logoIconHtml}
                 <div class="brand-text">
                     ${brandNameHtml}

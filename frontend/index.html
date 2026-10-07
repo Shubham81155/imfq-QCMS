@@ -3,14 +3,14 @@
 
 <head>
     <!-- Performance & Network Acceleration: Critical Preloads -->
-    <link rel="preload" href="/assets/dist/core.4cab001a.min.css" as="style">
+    <link rel="preload" href="/assets/dist/core.c10f66e1.min.css" as="style">
     <link rel="preload" href="/assets/dist/auth-guard.bb0c9864.min.js" as="script">
     <script src="/assets/dist/auth-guard.bb0c9864.min.js"></script>
 
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OctaQube Enterprise | Quality Management Reimagined</title>
-    <link rel="stylesheet" href="/assets/dist/core.4cab001a.min.css">
+    <link rel="stylesheet" href="/assets/dist/core.c10f66e1.min.css">
     <script src="/assets/dist/breadcrumbs.cb905230.min.js"></script>
     <script src="/assets/dist/lucide.min.js"></script>
     <style>
@@ -60,10 +60,69 @@
         .lp-brand-wrapper {
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 14px;
             min-width: 0;
             flex: 1 1 auto;
             overflow: hidden;
+        }
+
+        .ifqm-brand-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 6px 14px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.07);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: all 0.25s ease;
+            text-decoration: none;
+            min-height: 48px;
+            flex-shrink: 0;
+        }
+
+        .ifqm-brand-link:hover {
+            background: rgba(255, 255, 255, 0.16);
+            border-color: rgba(196, 162, 90, 0.5);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+        }
+
+        .ifqm-brand-link img {
+            height: 36px;
+            width: auto;
+            max-width: 195px;
+            object-fit: contain;
+            display: block;
+        }
+
+        .software-brand-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 4px 10px;
+            border-radius: 10px;
+            background: #FFFFFF;
+            border: 1px solid rgba(255, 255, 255, 0.95);
+            box-shadow: 0 3px 12px rgba(0, 0, 0, 0.2);
+            transition: all 0.25s ease;
+            text-decoration: none;
+            min-height: 48px;
+            flex-shrink: 0;
+        }
+
+        .software-brand-link:hover {
+            background: #FFFFFF;
+            transform: translateY(-1px);
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+            border-color: #FFFFFF;
+        }
+
+        .software-brand-link img {
+            height: 36px;
+            width: auto;
+            max-width: 180px;
+            object-fit: contain;
+            display: block;
         }
 
         .lp-brand-name {
@@ -137,6 +196,28 @@
 
             .lp-brand-wrapper {
                 gap: 8px !important;
+            }
+
+            .ifqm-brand-link {
+                padding: 4px 8px !important;
+                border-radius: 8px !important;
+                min-height: 36px !important;
+            }
+
+            .ifqm-brand-link img {
+                height: 24px !important;
+                max-width: 120px !important;
+            }
+
+            .software-brand-link {
+                padding: 3px 8px !important;
+                border-radius: 8px !important;
+                min-height: 36px !important;
+            }
+
+            .software-brand-link img {
+                height: 24px !important;
+                max-width: 110px !important;
             }
 
             .lp-brand-name {
@@ -341,12 +422,15 @@
     <nav class="lp-navbar glass-navbar">
         <div class="container d-flex justify-content-between align-items-center flex-nowrap">
             <div class="lp-brand-wrapper">
-                <div class="icon-box mb-0 flex-shrink-0" id="lp-navbar-logo-slot"
-                    style="width:36px; height:36px; border-radius:10px; background: #C4A25A; display:flex; align-items:center; justify-content:center; overflow:hidden;">
-                    <i data-lucide="shield-check" style="width:20px; height:20px; color:#002347;"></i>
-                </div>
-                <span class="lp-brand-name" id="lp-navbar-brand-name">OctaQube <span
-                        style="color:#C4A25A; font-weight:400;">Enterprise</span></span>
+                <!-- 1. IFQM Logo (Clicks to https://ifqm.org.in/) -->
+                <a href="https://ifqm.org.in/" target="_blank" rel="noopener noreferrer" class="ifqm-brand-link" title="Indian Foundation for Quality Management">
+                    <img src="/assets/images/ifqm-logo.svg" alt="IFQM - Indian Foundation for Quality Management" onerror="this.src='/assets/images/ifqm-logo.png';">
+                </a>
+
+                <!-- 2. Software Logo (Kalpion / Platform Logo in white card) -->
+                <a href="/index.html" class="software-brand-link" id="lp-navbar-logo-slot" title="Home">
+                    <img src="/assets/images/kalpion-logo.png" alt="Kalpion Logo" style="height:36px; max-width:180px; object-fit:contain; display:block;">
+                </a>
             </div>
             <div class="lp-navbar-actions">
                 <a href="/auth/login.html" class="auth-pill">Sign In</a>
@@ -792,13 +876,13 @@
         <div class="container py-5">
             <div class="row g-5">
                 <div class="col-lg-4">
-                    <div class="d-flex align-items-center gap-2 mb-4">
-                        <div id="lp-footer-logo-slot"
-                            style="width:40px; height:40px; border-radius:10px; background:#C4A25A; color:#002347; display:flex; align-items:center; justify-content:center;">
-                            <i data-lucide="shield-check" style="width:24px; height:24px;"></i>
-                        </div>
-                        <span class="fw-extrabold fs-4 text-white" id="lp-footer-brand-name">OctaQube <span
-                                style="color:#C4A25A; font-weight:400;">Enterprise</span></span>
+                    <div class="d-flex align-items-center gap-3 mb-4 flex-wrap">
+                        <a href="https://ifqm.org.in/" target="_blank" rel="noopener noreferrer" class="ifqm-brand-link" title="Indian Foundation for Quality Management">
+                            <img src="/assets/images/ifqm-logo.svg" alt="IFQM - Indian Foundation for Quality Management" onerror="this.src='/assets/images/ifqm-logo.png';">
+                        </a>
+                        <a href="/index.html" class="software-brand-link" id="lp-footer-logo-slot" title="Home">
+                            <img src="/assets/images/kalpion-logo.png" alt="Kalpion Logo" style="height:36px; max-width:180px; object-fit:contain; display:block;">
+                        </a>
                     </div>
                     <p class="mb-4" id="lp-footer-desc" style="max-width: 320px; color:#DAE0E7; line-height: 1.6;">The world's most advanced quality management system for modern manufacturing and enterprise excellence. Built for scale, security, and precision.</p>
                     <div class="d-flex gap-3">
@@ -870,7 +954,7 @@
     </footer>
 
     <script src="/assets/dist/bootstrap.bundle.min.js"></script>
-    <script src="/assets/dist/core-bundle.39698204.min.js"></script>
+    <script src="/assets/dist/core-bundle.16ff7d33.min.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
             // Clean up any stray authenticated shell elements on public landing page
@@ -919,6 +1003,27 @@
                 }
             });
 
+            // 0. Immediate local logo initialization to prevent flash
+            try {
+                const savedAssets = JSON.parse(localStorage.getItem('octaqube_brand_assets') || '{}');
+                let initialLogo = savedAssets['main-logo'] || savedAssets['logo'];
+                if (!initialLogo) {
+                    const savedConfig = JSON.parse(localStorage.getItem('octaqube_branding_config') || '{}');
+                    initialLogo = savedConfig.assets?.['main-logo'] || savedConfig.logo_url;
+                }
+                if (initialLogo && initialLogo !== 'null' && !initialLogo.includes('/assets/img/logo.png')) {
+                    const initialLogoSrc = initialLogo.includes('/uploads/') ? (initialLogo + (initialLogo.includes('?') ? '&' : '?') + 't=' + Date.now()) : initialLogo;
+                    const navLogoSlot = document.getElementById('lp-navbar-logo-slot');
+                    if (navLogoSlot) {
+                        navLogoSlot.innerHTML = `<img src="${initialLogoSrc}" alt="Software Logo" style="height:36px; max-width:195px; object-fit:contain; display:block;" onerror="this.outerHTML='<i data-lucide=\\'shield-check\\' style=\\'width:24px;height:24px;color:#C4A25A;\\'></i>'; if(window.lucide) lucide.createIcons();">`;
+                    }
+                    const footerLogoSlot = document.getElementById('lp-footer-logo-slot');
+                    if (footerLogoSlot) {
+                        footerLogoSlot.innerHTML = `<img src="${initialLogoSrc}" alt="Software Logo" style="height:36px; max-width:195px; object-fit:contain; display:block;" onerror="this.outerHTML='<i data-lucide=\\'shield-check\\' style=\\'width:24px;height:24px;color:#C4A25A;\\'></i>'; if(window.lucide) lucide.createIcons();">`;
+                    }
+                }
+            } catch (_) {}
+
             // Load Landing CMS Content
             try {
                 const res = await fetch('/api/super-admin/public/landing-content');
@@ -955,25 +1060,31 @@
                         };
                         const _html = (id, val) => { const el = document.getElementById(id); if (el && val !== undefined && val !== null) el.innerHTML = val; };
 
-                        // Update Navbar Brand Text & Logo
-                        const brandParts = brandShort.split(' ');
-                        const brandHtml = brandParts.length > 1 
-                            ? `${brandParts[0]} <span style="color:rgba(255,255,255,0.85); font-weight:500;">${brandParts.slice(1).join(' ')}</span>`
-                            : brandShort;
-                        _html('lp-navbar-brand-name', brandHtml);
-                        _html('lp-footer-brand-name', brandHtml);
+                        // Resolve platform / software logo (checking API context and localStorage)
+                        let resolvedLogo = branding.platform_logo_url || branding.logo_url;
+                        if (!resolvedLogo || resolvedLogo.includes('/assets/img/logo.png')) {
+                            try {
+                                const savedAssets = JSON.parse(localStorage.getItem('octaqube_brand_assets') || '{}');
+                                resolvedLogo = savedAssets['main-logo'] || savedAssets['logo'];
+                                if (!resolvedLogo) {
+                                    const savedConfig = JSON.parse(localStorage.getItem('octaqube_branding_config') || '{}');
+                                    resolvedLogo = savedConfig.assets?.['main-logo'] || savedConfig.logo_url;
+                                }
+                            } catch (_) {}
+                        }
 
-                        const logoSrc = branding.platform_logo_url || branding.logo_url;
-                        if (logoSrc && !logoSrc.includes('/assets/img/logo.png') && !logoSrc.includes('null')) {
+                        if (resolvedLogo && resolvedLogo !== 'null' && resolvedLogo !== 'None' && !resolvedLogo.includes('/assets/img/logo.png')) {
+                            const logoSrcWithBust = resolvedLogo.includes('/uploads/') 
+                                ? (resolvedLogo + (resolvedLogo.includes('?') ? '&' : '?') + 't=' + Date.now()) 
+                                : resolvedLogo;
+                            
                             const navLogoSlot = document.getElementById('lp-navbar-logo-slot');
                             if (navLogoSlot) {
-                                navLogoSlot.classList.add('has-img');
-                                navLogoSlot.style.background = 'transparent';
-                                navLogoSlot.innerHTML = `<img src="${logoSrc}" alt="${brandShort} Logo" style="height:26px; max-width:120px; object-fit:contain;" onerror="this.outerHTML='<i data-lucide=\\'shield-check\\' style=\\'width:20px;height:20px;color:var(--ds-bg-main);\\'></i>'; if(window.lucide) lucide.createIcons();">`;
+                                navLogoSlot.innerHTML = `<img src="${logoSrcWithBust}" alt="Software Logo" style="height:36px; max-width:195px; object-fit:contain; display:block;" onerror="this.outerHTML='<i data-lucide=\\'shield-check\\' style=\\'width:24px;height:24px;color:#C4A25A;\\'></i>'; if(window.lucide) lucide.createIcons();">`;
                             }
                             const footerLogoSlot = document.getElementById('lp-footer-logo-slot');
                             if (footerLogoSlot) {
-                                footerLogoSlot.innerHTML = `<img src="${logoSrc}" alt="${brandShort} Logo" style="height:28px; max-width:140px; object-fit:contain;" onerror="this.outerHTML='<i data-lucide=\\'shield-check\\' style=\\'width:24px;height:24px;\\'></i>'; if(window.lucide) lucide.createIcons();">`;
+                                footerLogoSlot.innerHTML = `<img src="${logoSrcWithBust}" alt="Software Logo" style="height:36px; max-width:195px; object-fit:contain; display:block;" onerror="this.outerHTML='<i data-lucide=\\'shield-check\\' style=\\'width:24px;height:24px;color:#C4A25A;\\'></i>'; if(window.lucide) lucide.createIcons();">`;
                             }
                         }
 

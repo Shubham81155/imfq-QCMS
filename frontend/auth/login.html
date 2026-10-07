@@ -3,14 +3,14 @@
 
 <head>
     <!-- Performance & Network Acceleration: Critical Preloads -->
-    <link rel="preload" href="/assets/dist/core.4cab001a.min.css" as="style">
+    <link rel="preload" href="/assets/dist/core.c10f66e1.min.css" as="style">
     <link rel="preload" href="/assets/dist/auth-guard.bb0c9864.min.js" as="script">
     <script src="/assets/dist/auth-guard.bb0c9864.min.js"></script>
-
+    <script src="/assets/dist/core-bundle.16ff7d33.min.js"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login | OctaQube Enterprise</title>
-    <link rel="stylesheet" href="/assets/dist/core.4cab001a.min.css">
+    <link rel="stylesheet" href="/assets/dist/core.c10f66e1.min.css">
     <script src="/assets/dist/lucide.min.js"></script>
     <style>
         body {
@@ -60,12 +60,12 @@
         }
 
         .login-branding h1 {
-            font-size: 3.5rem;
-            font-weight: 900;
-            line-height: 1;
-            letter-spacing: -0.06em;
+            font-size: 2.15rem;
+            font-weight: 800;
+            line-height: 1.25;
+            letter-spacing: -0.03em;
             color: var(--ds-text-main);
-            margin: 0;
+            margin: 0.75rem 0;
             position: relative;
             z-index: 1;
         }
@@ -198,7 +198,7 @@
             }
 
             .login-branding h1 {
-                font-size: 2.5rem;
+                font-size: 1.65rem;
                 text-align: center;
             }
 
@@ -221,9 +221,12 @@
             </a>
             <div style="margin-bottom: auto;">
                 <div class="brand-text" id="loginBrandHeader"
-                    style="font-size: 1.1rem; opacity: 0.8; font-weight: 700; display:flex; align-items:center; gap:8px;">
-                    <span id="loginBrandLogoSlot" style="display:flex;align-items:center;"><i data-lucide="shield-check" style="width:20px; height:20px;"></i></span>
-                    <span id="loginBrandShortName">OctaQube</span> <small id="loginBrandTagline" style="font-size: 0.75rem; opacity: 0.6; font-weight: 500;">ENTERPRISE</small>
+                    style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px;">
+                    <span id="loginBrandLogoSlot" style="display: flex; align-items: center; min-height: 64px; margin-bottom: 6px;">
+                        <img src="/uploads/branding/logo_1791366231_ctaQube_Gradient_Community_Logo.png" alt="Logo" style="height:64px; max-height:80px; width:auto; max-width:280px; object-fit:contain; display:block;" onerror="this.outerHTML='<i data-lucide=\'shield-check\' style=\'width:56px;height:56px;color:var(--ds-accent, #C4A25A);\'></i>'; if(window.lucide) lucide.createIcons();">
+                    </span>
+                    <span id="loginBrandShortName" style="display: none !important;">OctaQube</span>
+                    <div id="loginBrandTagline" style="font-size: 0.75rem; opacity: 0.7; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; line-height: 1.4; color: var(--ds-text-secondary); margin-top: 4px; margin-bottom: 8px;">ENTERPRISE QUALITY & COMPLIANCE MANAGEMENT SYSTEM</div>
                 </div>
             </div>
             <h1 id="loginPlatformTitle">Quality Management System</h1>
@@ -358,7 +361,6 @@
         </div>
     </div>
 
-    <script src="/assets/dist/core-bundle.39698204.min.js"></script>
     <script src="/assets/dist/enterprise-validator.min.js?v=20260930_1615"></script>
     <script src="/assets/dist/auth.min.js?v=20260930_1615"></script>
     <script>
@@ -376,80 +378,78 @@
         }
 
         // Check for URL parameters to show messages and prepare login state
-        window.addEventListener('DOMContentLoaded', () => {
-            const urlParams    = new URLSearchParams(window.location.search);
-            const successMsgEl = document.getElementById('successMsg');
+                // --- Dynamic Login Page & Branding Initialization ---
+        async function applyBrandingData(b) {
+            if (!b) return;
+            try {
+                const shortName = b.software_short_name || b.software_name || 'OctaQube';
+                const softName  = b.software_display_name || b.software_name || 'OctaQube Enterprise';
+                const platTitle = b.platform_title || b.software_name || 'Quality Management System';
+                const tagline   = b.platform_subtitle || b.tagline || 'ENTERPRISE QUALITY & COMPLIANCE MANAGEMENT SYSTEM';
 
-            // Clear current tab session only on login page load, preserving active sessions in other tabs
-            sessionStorage.removeItem('token');
-            sessionStorage.removeItem('access_token');
-            sessionStorage.removeItem('user');
-            sessionStorage.removeItem('role_permissions');
-            sessionStorage.removeItem('octaqube_authenticated');
-            if (urlParams.get('logout') === 'true' || urlParams.get('reason') === 'session_terminated') {
-                sessionStorage.clear();
-            }
+                const brandShortEl = document.getElementById('loginBrandShortName');
+                if (brandShortEl) brandShortEl.textContent = shortName;
 
-            if (urlParams.get('registered')) {
-                successMsgEl.querySelector('span').textContent = "Registration successful! You can now log in.";
-                successMsgEl.style.display = 'flex';
-            } else if (urlParams.get('reset')) {
-                successMsgEl.querySelector('span').textContent = "Password updated successfully! Please log in with your new password.";
-                successMsgEl.style.display = 'flex';
-            } else if (urlParams.get('reason') === 'session_terminated') {
-                const errEl = document.getElementById('errorMsg');
-                if (errEl) {
-                    errEl.querySelector('span').textContent = "Your session was terminated by an administrator. Please sign in again.";
-                    errEl.style.display = 'flex';
+                const accountShortEl = document.getElementById('loginAccountShortName');
+                if (accountShortEl) accountShortEl.textContent = shortName;
+
+                const brandTaglineEl = document.getElementById('loginBrandTagline');
+                if (brandTaglineEl) brandTaglineEl.textContent = tagline.toUpperCase();
+
+                const platTitleEl = document.getElementById('loginPlatformTitle');
+                if (platTitleEl) platTitleEl.textContent = platTitle;
+
+                document.title = 'Login | ' + softName;
+
+                // Dynamic Logo Image
+                let logoSrc = b.platform_logo_url || b.logo_url || b.assets?.['main-logo'] || b.assets?.['logo'];
+                if (!logoSrc || logoSrc.includes('/assets/img/logo.png')) {
+                    try {
+                        const savedAssets = JSON.parse(localStorage.getItem('octaqube_brand_assets') || '{}');
+                        logoSrc = savedAssets['main-logo'] || savedAssets['logo'] || logoSrc;
+                    } catch (_) {}
                 }
-            }
 
-            if (window.lucide) lucide.createIcons();
-
-            // â”€â”€ Dynamic Login Label â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-            const FIELD_LABELS = {
-                email:    'Email ID',
-                username: 'Username',
-                phone:    'Phone Number',
-                phone_number: 'Phone Number'
-            };
-
-            window.handleSSOLogin = async function(provider) {
-                const email = prompt('Please enter your ' + provider.toUpperCase() + ' email address to simulate SSO login:');
-                if (!email) return;
-                
-                try {
-                    const res = await api.post('/auth/sso/' + provider, { email, token: 'mock-sso-token' });
-                    sessionStorage.setItem('token', res.access_token);
-                    sessionStorage.setItem('user', JSON.stringify({
-                        username: res.username,
-                        role: res.role,
-                        org_id: res.org_id,
-                        org_name: res.org_name,
-                        id: res.id,
-                        org_primary_color: res.org_primary_color || null,
-                        org_logo_url: res.org_logo_url || null
-                    }));
-                    
-                    // Redirect
-                    if (res.role === 'SuperAdmin') window.location.replace('/admin/super-admin.html');
-                    else if (res.role === 'Admin') window.location.replace('/dashboard/dashboard-admin.html');
-                    else window.location.replace('/dashboard/dashboard-team-member.html');
-                } catch (err) {
-                    const errEl = document.getElementById('errorMsg');
-                    if (errEl) {
-                        errEl.querySelector('span').textContent = err.message;
-                        errEl.style.display = 'flex';
+                const logoSlot = document.getElementById('loginBrandLogoSlot');
+                if (logoSlot) {
+                    if (logoSrc && logoSrc !== 'null' && logoSrc !== 'None' && !logoSrc.includes('/assets/img/logo.png')) {
+                        const logoSrcWithBust = logoSrc.includes('/uploads/') ? (logoSrc + (logoSrc.includes('?') ? '&' : '?') + 't=' + Date.now()) : logoSrc;
+                        logoSlot.innerHTML = `<img src="${logoSrcWithBust}" alt="${shortName} Logo" style="height:64px; max-height:80px; width:auto; max-width:280px; object-fit:contain; display:block;" onerror="this.outerHTML='<i data-lucide=\'shield-check\' style=\'width:56px;height:56px;color:var(--ds-accent, #C4A25A);\'></i>'; if(window.lucide) lucide.createIcons();">`;
+                    } else {
+                        logoSlot.innerHTML = '<i data-lucide="shield-check" style="width:56px; height:56px; color:var(--ds-accent, #C4A25A);"></i>';
                     }
                 }
-            };
 
-            let _lastCheckedIdentifier = null;
-            async function fetchAndApplyLoginOptions(identifier = '') {
-                try {
-                    const url = api.baseUrl + '/auth/login-config' + (identifier ? '?identifier=' + encodeURIComponent(identifier) : '');
-                    const res = await fetch(url);
-                    if (!res.ok) return;
+                // Favicon
+                const favSrc = b.favicon_url || b.platform_favicon_url || logoSrc;
+                if (favSrc && favSrc !== 'null') {
+                    let favEl = document.querySelector('link[rel="icon"]') || document.querySelector('link[rel="shortcut icon"]');
+                    if (!favEl) {
+                        favEl = document.createElement('link');
+                        favEl.rel = 'icon';
+                        document.head.appendChild(favEl);
+                    }
+                    favEl.href = favSrc;
+                }
+
+                // Theme Primary Color
+                if (b.primary_color) {
+                    document.documentElement.style.setProperty('--ds-accent', b.primary_color);
+                    document.documentElement.style.setProperty('--ds-primary', b.primary_color);
+                }
+
+                try { localStorage.setItem('octaqube_branding_config', JSON.stringify(b)); } catch(e) {}
+                if (window.lucide) lucide.createIcons();
+            } catch (_) {}
+        }
+
+        let _lastCheckedIdentifier = null;
+        async function fetchAndApplyLoginOptions(identifier = '') {
+            try {
+                const baseUrl = (window.api && window.api.baseUrl) ? window.api.baseUrl : '/api';
+                const url = baseUrl + '/auth/login-config' + (identifier ? '?identifier=' + encodeURIComponent(identifier) : '');
+                const res = await fetch(url);
+                if (res.ok) {
                     const data = await res.json();
                     let options = data.login_options || [];
                     const labels  = data.field_labels  || {};
@@ -521,64 +521,71 @@
                         }
                     }
 
-                    // Dynamic Document Identity & Platform Branding
-                    const b = data.branding || {};
-                    const shortName = b.software_short_name || 'OctaQube';
-                    const softName  = b.software_name || 'OctaQube Enterprise';
-                    const platTitle = b.platform_title || 'Quality Management System';
-                    const tagline   = b.platform_subtitle || b.tagline || 'ENTERPRISE';
-
-                    const brandShortEl = document.getElementById('loginBrandShortName');
-                    if (brandShortEl) brandShortEl.textContent = shortName;
-
-                    const accountShortEl = document.getElementById('loginAccountShortName');
-                    if (accountShortEl) accountShortEl.textContent = shortName;
-
-                    const brandTaglineEl = document.getElementById('loginBrandTagline');
-                    if (brandTaglineEl) brandTaglineEl.textContent = tagline.toUpperCase();
-
-                    const platTitleEl = document.getElementById('loginPlatformTitle');
-                    if (platTitleEl) platTitleEl.textContent = platTitle;
-
-                    document.title = 'Login | ' + softName;
-
-                    // Dynamic Logo Image or Fallback Shield
-                    const logoSlot = document.getElementById('loginBrandLogoSlot');
-                    if (logoSlot) {
-                        const logoSrc = b.platform_logo_url || b.logo_url;
-                        if (logoSrc && !logoSrc.includes('/assets/img/logo.png')) {
-                            logoSlot.innerHTML = '<img src="' + logoSrc + '" alt="' + shortName + ' Logo" style="height:22px; max-width:120px; object-fit:contain;" onerror="this.outerHTML=\'<i data-lucide=\\\'shield-check\\\' style=\\\width:20px;height:20px;\\\'></i>\'; if(window.lucide) lucide.createIcons();">';
-                        } else {
-                            logoSlot.innerHTML = '<i data-lucide="shield-check" style="width:20px; height:20px;"></i>';
-                        }
+                    if (data.branding) {
+                        await applyBrandingData(data.branding);
                     }
+                }
+            } catch (_) {}
 
-                    // Favicon
-                    if (b.favicon_url || b.platform_logo_url || b.logo_url) {
-                        let favEl = document.querySelector('link[rel="icon"]') || document.querySelector('link[rel="shortcut icon"]');
-                        if (!favEl) {
-                            favEl = document.createElement('link');
-                            favEl.rel = 'icon';
-                            document.head.appendChild(favEl);
-                        }
-                        favEl.href = b.favicon_url || b.platform_logo_url || b.logo_url;
+            // Fallback to super-admin public landing-content if branding is not loaded yet
+            try {
+                const landingRes = await fetch('/api/super-admin/public/landing-content');
+                if (landingRes.ok) {
+                    const lData = await landingRes.json();
+                    if (lData.branding || lData.branding_context) {
+                        await applyBrandingData(lData.branding || lData.branding_context);
                     }
+                }
+            } catch (_) {}
+        }
 
-                    // Theme Primary Color
-                    if (b.primary_color) {
-                        document.documentElement.style.setProperty('--ds-accent', b.primary_color);
-                        document.documentElement.style.setProperty('--ds-primary', b.primary_color);
-                    }
+        function initLoginPage() {
+            // Instant local cache read
+            try {
+                const savedConfig = JSON.parse(localStorage.getItem('octaqube_branding_config') || '{}');
+                const savedAssets = JSON.parse(localStorage.getItem('octaqube_brand_assets') || '{}');
+                const localBranding = { ...savedConfig, assets: savedAssets };
+                if (localBranding.logo_url || localBranding.platform_logo_url || savedAssets['main-logo'] || savedAssets['logo']) {
+                    applyBrandingData(localBranding);
+                }
+            } catch (_) {}
 
-                    if (window.lucide) lucide.createIcons();
-                } catch (_) {
-                    // Silently ignore
+            const urlParams    = new URLSearchParams(window.location.search);
+            const successMsgEl = document.getElementById('successMsg');
+
+            sessionStorage.removeItem('token');
+            sessionStorage.removeItem('access_token');
+            sessionStorage.removeItem('user');
+            sessionStorage.removeItem('role_permissions');
+            sessionStorage.removeItem('octaqube_authenticated');
+            if (urlParams.get('logout') === 'true' || urlParams.get('reason') === 'session_terminated') {
+                sessionStorage.clear();
+            }
+
+            if (urlParams.get('registered')) {
+                if (successMsgEl) {
+                    successMsgEl.querySelector('span').textContent = "Registration successful! You can now log in.";
+                    successMsgEl.style.display = 'flex';
+                }
+            } else if (urlParams.get('reset')) {
+                if (successMsgEl) {
+                    successMsgEl.querySelector('span').textContent = "Password updated successfully! Please log in with your new password.";
+                    successMsgEl.style.display = 'flex';
+                }
+            } else if (urlParams.get('reason') === 'session_terminated') {
+                const errEl = document.getElementById('errorMsg');
+                if (errEl) {
+                    errEl.querySelector('span').textContent = "Your session was terminated by an administrator. Please sign in again.";
+                    errEl.style.display = 'flex';
                 }
             }
 
+            if (window.lucide) lucide.createIcons();
+
+            fetchAndApplyLoginOptions();
+
             const identifierInput = document.getElementById('username');
             if (identifierInput) {
-                fetchAndApplyLoginOptions();
                 identifierInput.addEventListener('blur', () => {
                     const val = identifierInput.value.trim();
                     if (val && val !== _lastCheckedIdentifier) {
@@ -587,7 +594,13 @@
                     }
                 });
             }
-        });
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initLoginPage);
+        } else {
+            initLoginPage();
+        }
     
         // ── Direct Stepped Smart Auth Controller (Guaranteed to execute immediately) ──
         (function() {

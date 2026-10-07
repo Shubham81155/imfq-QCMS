@@ -3,14 +3,14 @@
 
 <head>
     <!-- Performance & Network Acceleration: Critical Preloads -->
-    <link rel="preload" href="/assets/dist/core.4cab001a.min.css" as="style">
+    <link rel="preload" href="/assets/dist/core.c10f66e1.min.css" as="style">
     <link rel="preload" href="/assets/dist/auth-guard.bb0c9864.min.js" as="script">
     <script src="/assets/dist/auth-guard.bb0c9864.min.js"></script>
 
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Master Control | OctaQube SaaS Platform</title>
-    <link rel="stylesheet" href="/assets/dist/core.4cab001a.min.css">
+    <link rel="stylesheet" href="/assets/dist/core.c10f66e1.min.css">
     <script src="/assets/dist/breadcrumbs.cb905230.min.js"></script>
     <script src="/assets/dist/lucide.min.js"></script>
     <script src="/assets/dist/html2pdf.bundle.min.js"></script>
@@ -6591,7 +6591,7 @@
 
     <script src="/assets/dist/bootstrap.bundle.min.js"></script>
     <script src="/assets/dist/chart.min.js"></script>
-    <script src="/assets/dist/core-bundle.39698204.min.js"></script>
+    <script src="/assets/dist/core-bundle.16ff7d33.min.js"></script>
     <script src="/assets/dist/enterprise-analytics.1a241dcd.min.js"></script>
     <script src="/assets/dist/support-desk.7f2f8bf7.min.js"></script>
     <script src="/assets/dist/integrations.c8c8e530.min.js"></script>
@@ -7042,10 +7042,10 @@
 
                 let logoHtml = `<div class="brand-icon" style="background: var(--ds-accent);"><i data-lucide="shield-check" style="color:white;"></i></div>`;
                 if (logoUrl && logoUrl !== 'null' && logoUrl !== 'None' && !logoUrl.includes('/assets/img/logo.png')) {
-                    logoHtml = `<img src="${logoUrl}" alt="Logo" style="width: 32px; height: 32px; object-fit: contain; border-radius: 8px;">`;
+                    logoHtml = `<img src="${logoUrl}" alt="Logo" style="height: 52px; max-height: 58px; width: 100%; max-width: 100%; object-fit: contain; border-radius: 8px; display: block;">`;
                 }
 
-                sidebarBrand.innerHTML = `${logoHtml}<div class="brand-text">${OctaQube.escapeHtml(shortName)} <small style="color:var(--ds-accent); opacity:1;">${OctaQube.escapeHtml(displaySub)}</small></div>`;
+                sidebarBrand.innerHTML = (logoUrl && logoUrl !== 'null' && !logoUrl.includes('/assets/img/logo.png')) ? logoHtml : `${logoHtml}<div class="brand-text">${OctaQube.escapeHtml(shortName)} <small style="color:var(--ds-accent); opacity:1;">${OctaQube.escapeHtml(displaySub)}</small></div>`;
                 if (window.lucide) lucide.createIcons();
 
                 if (savedFavicon) {
