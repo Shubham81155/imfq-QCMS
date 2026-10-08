@@ -237,6 +237,37 @@ def get_invoice_details(inv_id):
         "amount": x.amount
     } for x in inv.items]
 
+    # If relational items are empty, check usage_breakdown (for Pay-As-You-Go metered invoices)
+    if not items and inv.usage_breakdown and isinstance(inv.usage_breakdown, dict):
+        raw_items = inv.usage_breakdown.get('line_items', [])
+        for idx, it in enumerate(raw_items):
+            desc = it.get('metric', '')
+            if it.get('description'):
+                desc = f"{desc} ({it.get('description')})"
+            qty = it.get('billable_units', it.get('units_used', 1))
+            unit_price = float(it.get('unit_price', 0.0))
+            amt = float(it.get('line_total', 0.0))
+            items.append({
+                "id": idx + 1,
+                "description": desc or 'Metered Resource Item',
+                "quantity": qty,
+                "unit_price": unit_price,
+                "amount": amt,
+                "unit_label": it.get('unit_label', '')
+            })
+
+    # If still empty, construct standard subscription plan line item
+    if not items and (inv.base_amount is not None or inv.plan_name):
+        plan_name = inv.plan_name or 'Subscription'
+        cycle = inv.billing_cycle or 'Monthly'
+        items.append({
+            "id": 1,
+            "description": f"{plan_name} Plan ({cycle})",
+            "quantity": 1,
+            "unit_price": float(inv.base_amount or 0.0),
+            "amount": float(inv.base_amount or 0.0)
+        })
+
     # Fetch Refund History
     refunds = [{
         "id": r.id,
@@ -1719,15 +1750,20 @@ def preview_single_payg_bill():
     from app.domain.services.payg_billing_service import PaygBillingService
     breakdown = PaygBillingService.calculate_payg_bill_breakdown(org.id)
 
+    subtotal_val = float(breakdown.get('subtotal_amount', breakdown.get('subtotal', 0.0)) or 0.0)
+    gst_pct = float(breakdown.get('gst_percent', breakdown.get('tax_percent', 18.0)) or 18.0)
+    gst_val = float(breakdown.get('gst_amount', breakdown.get('tax_amount', 0.0)) or 0.0)
+    total_val = float(breakdown.get('total_amount', 0.0) or 0.0)
+
     # Dummy invoice mock object for template rendering
     class MockInvoice:
         invoice_number = f"INV-{datetime.now(timezone.utc).replace(tzinfo=None).strftime('%Y%m')}-{org.id:03d}"
         invoice_status = "Pending Dispatch"
         due_date = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=15)
-        base_amount = breakdown.get('subtotal', 0.0)
-        gst_percent = breakdown.get('tax_percent', 18.0)
-        gst_amount = breakdown.get('tax_amount', 0.0)
-        total_amount = breakdown.get('total_amount', 0.0)
+        base_amount = subtotal_val
+        gst_percent = gst_pct
+        gst_amount = gst_val
+        total_amount = total_val
 
     mock_inv = MockInvoice()
     invoice_html = PaygBillingService.generate_payg_invoice_html(mock_inv, org, breakdown)
@@ -1745,12 +1781,16 @@ def preview_single_payg_bill():
             "subject": subject,
             "period_start": breakdown.get('period_start'),
             "period_end": breakdown.get('period_end'),
-            "subtotal": breakdown.get('subtotal', 0.0),
-            "subtotal_fmt": f"₹{breakdown.get('subtotal', 0.0):,.2f}",
-            "tax_amount": breakdown.get('tax_amount', 0.0),
-            "tax_amount_fmt": f"₹{breakdown.get('tax_amount', 0.0):,.2f}",
-            "estimated_total": breakdown.get('total_amount', 0.0),
-            "estimated_total_fmt": f"₹{breakdown.get('total_amount', 0.0):,.2f}",
+            "subtotal": subtotal_val,
+            "subtotal_amount": subtotal_val,
+            "subtotal_fmt": f"₹{subtotal_val:,.2f}",
+            "tax_amount": gst_val,
+            "gst_amount": gst_val,
+            "gst_percent": gst_pct,
+            "tax_amount_fmt": f"₹{gst_val:,.2f}",
+            "estimated_total": total_val,
+            "total_amount": total_val,
+            "estimated_total_fmt": f"₹{total_val:,.2f}",
             "line_items": breakdown.get('line_items', []),
             "invoice_html": invoice_html
         }
