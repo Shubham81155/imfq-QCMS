@@ -315,10 +315,6 @@ def get_dashboard_stats():
     engine_kpis = FinancialMetricsEngine.get_consolidated_kpis()
     mrr_val = engine_kpis["mrr"]
     arr_val = engine_kpis["arr"]
-    active_paid_amount = mrr_val
-    
-    if revenue_in_period == 0.0 and active_paid_amount > 0.0:
-        revenue_in_period = active_paid_amount
 
     # 10. Pending Support Tickets (from customer tenant users)
     pending_tickets = SupportTicket.query.join(
@@ -333,12 +329,24 @@ def get_dashboard_stats():
     # 11. Suspended Organizations (using partitioned count matching _get_effective_v1_status)
     # suspended_orgs already calculated above to guarantee total consistency
 
-    # 12. Dynamic Trend Chart Points for Selected Range
+    # 12. Helper to generate trailing N historical calendar months ending at current month
+    def _get_trailing_month_windows(n_months):
+        windows = []
+        for offset in range(n_months - 1, -1, -1):
+            total_m = now.year * 12 + (now.month - 1) - offset
+            m_year = total_m // 12
+            m_month = (total_m % 12) + 1
+            m_start = datetime(m_year, m_month, 1)
+            next_total = total_m + 1
+            m_end = datetime(next_total // 12, (next_total % 12) + 1, 1)
+            windows.append((m_start, m_end, m_start.strftime('%b %y')))
+        return windows
+
     trend_labels = []
     trend_mrr = []
     trend_arr = []
 
-    if days <= 30:
+    if range_str in ['7d', '7days', 'last 7 days', '30d', '30days', 'last 30 days']:
         step = 1 if days <= 7 else 3
         for i in range(days, -1, -step):
             d = now - timedelta(days=i)
@@ -347,105 +355,64 @@ def get_dashboard_stats():
             val = db.session.query(func.sum(pmt_amount_col)).join(
                 Organization, SubscriptionPayment.org_id == Organization.id
             ).filter(
+                Organization.is_platform_org == False,
                 Organization.is_deleted == False,
-                SubscriptionPayment.payment_status.in_(['Completed', 'Paid', 'COMPLETED', 'PAID']),
+                SubscriptionPayment.payment_status.in_(['Completed', 'Paid', 'COMPLETED', 'PAID', 'SUCCESS']),
                 SubscriptionPayment.created_at <= day_end
             ).scalar() or 0.0
-
-            if val == 0.0:
-                val = db.session.query(func.sum(sub_amount_col)).join(
-                    Organization, Subscription.org_id == Organization.id
-                ).filter(
-                    Organization.is_deleted == False,
-                    Subscription.subscription_status.in_(['Active', 'ACTIVE']),
-                    Subscription.created_at <= day_end
-                ).scalar() or 0.0
 
             val_rounded = round(float(val or 0.0), 2)
             trend_mrr.append(val_rounded)
             trend_arr.append(round(val_rounded * 12, 2))
     else:
-        start_year = 2026
-        start_month = 9
         if range_str in ['6m', '6months', 'last 6 months']:
             num_months = 6
         elif range_str in ['ytd', 'year to date']:
-            num_months = 12 - start_month + 1 if now.year == 2026 else now.month
+            num_months = now.month
+        elif range_str in ['all', 'all time', 'alltime']:
+            num_months = max(12, min(36, (now.year - 2025) * 12 + now.month))
         else:
             num_months = 12
 
-        for i in range(num_months):
-            m_year = start_year + (start_month - 1 + i) // 12
-            m_month = (start_month - 1 + i) % 12 + 1
-            m_date = datetime(m_year, m_month, 1)
-            trend_labels.append(m_date.strftime('%b %y'))
-            next_m_month = m_month + 1
-            next_m_year = m_year
-            if next_m_month > 12:
-                next_m_month = 1
-                next_m_year += 1
-            m_next = datetime(next_m_year, next_m_month, 1)
+        month_windows = _get_trailing_month_windows(num_months)
+        for m_date, m_next, label in month_windows:
+            trend_labels.append(label)
 
             val = db.session.query(func.sum(pmt_amount_col)).join(
                 Organization, SubscriptionPayment.org_id == Organization.id
             ).filter(
                 Organization.is_platform_org == False,
-                SubscriptionPayment.payment_status.in_(['Completed', 'Paid', 'COMPLETED', 'PAID']),
+                Organization.is_deleted == False,
+                SubscriptionPayment.payment_status.in_(['Completed', 'Paid', 'COMPLETED', 'PAID', 'SUCCESS']),
                 SubscriptionPayment.created_at >= m_date,
                 SubscriptionPayment.created_at < m_next
             ).scalar() or 0.0
-
-            if val == 0.0:
-                val = db.session.query(func.sum(sub_amount_col)).join(
-                    Organization, Subscription.org_id == Organization.id
-                ).filter(
-                    Organization.is_platform_org == False,
-                    Organization.is_deleted == False,
-                    Subscription.subscription_status.in_(['Active', 'ACTIVE']),
-                    Subscription.created_at < m_next
-                ).scalar() or 0.0
 
             val_rounded = round(float(val or 0.0), 2)
             trend_mrr.append(val_rounded)
             trend_arr.append(round(val_rounded * 12, 2))
 
-    # 13. Month-wise Organization Onboarding & Adoption Trend
-    # Software came online in September 2026: timeline starts from Sep 26 and displays forward
+    # 13. Month-wise Organization Onboarding & Adoption Trend (Trailing Historical Window)
     ob_labels = []
     ob_new = []
     ob_cumulative = []
     ob_adopted = []
 
-    start_year = 2026
-    start_month = 9
-
     if range_str in ['6m', '6months', 'last 6 months']:
         ob_num_months = 6
-    elif range_str in ['ytd', 'year to date']:
-        if now.year == 2026:
-            ob_num_months = 12 - start_month + 1
-        else:
-            start_year = now.year
-            start_month = 1
-            ob_num_months = now.month
-    elif range_str in ['all', 'all time', 'alltime']:
-        months_since_launch = (now.year - start_year) * 12 + (now.month - start_month) + 1
-        ob_num_months = max(12, min(36, months_since_launch))
-    else:
+    elif range_str in ['12m', '12months', 'last 12 months']:
         ob_num_months = 12
+    elif range_str in ['ytd', 'year to date']:
+        ob_num_months = now.month
+    elif range_str in ['all', 'all time', 'alltime']:
+        ob_num_months = max(12, min(36, (now.year - 2025) * 12 + now.month))
+    else:
+        ob_num_months = 6
 
-    for i in range(ob_num_months):
-        m_year = start_year + (start_month - 1 + i) // 12
-        m_month = (start_month - 1 + i) % 12 + 1
-        m_date = datetime(m_year, m_month, 1)
-        next_m_month = m_month + 1
-        next_m_year = m_year
-        if next_m_month > 12:
-            next_m_month = 1
-            next_m_year += 1
-        m_next = datetime(next_m_year, next_m_month, 1)
+    ob_month_windows = _get_trailing_month_windows(ob_num_months)
 
-        ob_labels.append(m_date.strftime('%b %y'))
+    for m_date, m_next, label in ob_month_windows:
+        ob_labels.append(label)
 
         # New Organizations onboarded in this month
         new_cnt = Organization.query.filter(
@@ -474,8 +441,8 @@ def get_dashboard_stats():
         ob_adopted.append(adp_cnt)
 
     period_new_total = sum(ob_new)
-    elapsed_months = max(1, len([1 for i in range(ob_num_months) if datetime(start_year + (start_month - 1 + i) // 12, (start_month - 1 + i) % 12 + 1, 1) <= now]))
-    avg_monthly = period_new_total / elapsed_months
+    elapsed_months = max(1, len(ob_month_windows))
+    avg_monthly = round(period_new_total / elapsed_months, 1)
     adoption_rate_pct = round((active_orgs / max(1, total_orgs)) * 100, 1)
     
     if ob_new and max(ob_new) > 0:
@@ -710,23 +677,21 @@ def calculate_org_realized_project_value(range_str='all', include_projects=True)
     orgs_with_savings = len([o for o in orgs_data if o['closed_projects_count'] > 0])
 
     # Generate timeline labels and points (sorted chronologically)
+    now_dt = datetime.now(timezone.utc).replace(tzinfo=None)
+    # Ensure trailing 6 historical months ending in current month are included
+    for offset in range(5, -1, -1):
+        total_m = now_dt.year * 12 + (now_dt.month - 1) - offset
+        m_year = total_m // 12
+        m_month = (total_m % 12) + 1
+        m_dt = datetime(m_year, m_month, 1)
+        sk = m_dt.strftime('%Y-%m')
+        if sk not in monthly_impact_map:
+            monthly_impact_map[sk] = {
+                "label": m_dt.strftime('%b %y'),
+                "savings": 0.0,
+                "closed_count": 0
+            }
     sorted_months = sorted(monthly_impact_map.keys())
-    # Ensure at least 6 months are shown in the trend chart starting from software launch (Sep 2026)
-    if len(sorted_months) < 6:
-        start_year = 2026
-        start_month = 9
-        for i in range(6):
-            m_year = start_year + (start_month - 1 + i) // 12
-            m_month = (start_month - 1 + i) % 12 + 1
-            m_dt = datetime(m_year, m_month, 1)
-            sk = m_dt.strftime('%Y-%m')
-            if sk not in monthly_impact_map:
-                monthly_impact_map[sk] = {
-                    "label": m_dt.strftime('%b %y'),
-                    "savings": 0.0,
-                    "closed_count": 0
-                }
-        sorted_months = sorted(monthly_impact_map.keys())
 
     timeline_labels = [monthly_impact_map[k]["label"] for k in sorted_months]
     timeline_savings = [round(monthly_impact_map[k]["savings"], 2) for k in sorted_months]
@@ -803,7 +768,7 @@ def get_billing_kpis():
         SubscriptionPayment.payment_status.in_(['Completed', 'Paid', 'COMPLETED', 'PAID', 'SUCCESS']),
         func.coalesce(SubscriptionPayment.final_amount, SubscriptionPayment.amount, 0) > 0
     ).distinct().count()
-    active_subs = max(1, paid_org_count)
+    active_subs = paid_org_count
 
     # Trial subscriptions
     trial_subs = Organization.query.filter(

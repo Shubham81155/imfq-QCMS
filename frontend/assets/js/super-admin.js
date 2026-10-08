@@ -2244,11 +2244,11 @@ const SuperAdmin = {
                 ${OctaQube.kpiCardWithTooltip('Total Organizations', kpi.total, 'building-2', 'blue', 'COUNT(organizations WHERE is_platform_org=FALSE AND is_deleted=FALSE)', 'Total registered customer tenant organizations on OctaQube. Sourced from the organizations table.', 'onclick="SuperAdmin.filterByKpi(\'all\')"')}
                 ${OctaQube.kpiCardWithTooltip('Paid Organizations', kpi.active, 'check-circle', 'green', 'COUNT(organizations WHERE subscription_status=\'Active\')', 'Tenants currently on an active paid SaaS subscription plan. Sourced from organizations & subscriptions.', 'onclick="SuperAdmin.filterByKpi(\'status\', \'Active\')"')}
                 ${OctaQube.kpiCardWithTooltip('On Trial Organizations', kpi.trialing, 'clock', 'orange', 'COUNT(organizations WHERE subscription_status=\'Trialing\')', 'Tenants currently active within their 14-day evaluation trial. Sourced from organizations table.', 'onclick="SuperAdmin.filterByKpi(\'status\', \'Trialing\')"')}
-                ${OctaQube.kpiCardWithTooltip('Expiring Soon', kpi.expiring_soon || 0, 'alert-triangle', 'amber', 'COUNT(organizations WHERE license_expiry_date BETWEEN NOW() AND NOW() + 7 DAYS)', 'Tenants with trials or licenses expiring within 7 days. Sourced from organizations table.', 'onclick="SuperAdmin.filterByKpi(\'license_status\', \'Expiring Soon\')"')}
-                ${OctaQube.kpiCardWithTooltip('Inactive (20d)', kpi.inactive_20d || 0, 'user-x', 'slate', 'COUNT(organizations WHERE created_at < NOW() - 20d AND MAX(last_login) < NOW() - 20d)', 'Tenants registered >20 days ago with zero login activity across all users in last 20 days.', 'onclick="SuperAdmin.filterByKpi(\'license_status\', \'Inactive 20d\')"')}
+                ${OctaQube.kpiCardWithTooltip('Expiring Soon', kpi.expiring_soon || 0, 'alert-triangle', 'amber', 'COUNT(organizations WHERE license_expiry_date BETWEEN NOW() AND NOW() + 7 DAYS)', 'Tenants with trials or licenses expiring within 7 days. Sourced from organizations table.', 'onclick="SuperAdmin.filterByKpi(\'status\', \'Expiring Soon\')"')}
+                ${OctaQube.kpiCardWithTooltip('Inactive (20d)', kpi.inactive_20d || 0, 'user-x', 'slate', 'COUNT(organizations WHERE created_at < NOW() - 20d AND MAX(last_login) < NOW() - 20d)', 'Tenants registered >20 days ago with zero login activity across all users in last 20 days.', 'onclick="SuperAdmin.filterByKpi(\'status\', \'Inactive 20d\')"')}
                 ${OctaQube.kpiCardWithTooltip('On Hold', kpi.suspended, 'pause-circle', 'red', 'COUNT(organizations WHERE subscription_status=\'Suspended\')', 'Tenants temporarily suspended from platform access. Sourced from organizations table.', 'onclick="SuperAdmin.filterByKpi(\'status\', \'Suspended\')"')}
                 ${OctaQube.kpiCardWithTooltip('Enterprise', kpi.enterprise, 'crown', 'purple', 'COUNT(organizations WHERE subscription_plan=\'Enterprise\')', 'Client organizations enrolled in the Enterprise SaaS tier. Sourced from organizations table.', 'onclick="SuperAdmin.filterByKpi(\'plan\', \'Enterprise\')"')}
-                ${OctaQube.kpiCardWithTooltip('Expired Subscriptions', kpi.expired, 'x-circle', 'gray', 'COUNT(organizations WHERE subscription_status=\'Expired\' OR license_expiry_date < NOW())', 'Tenants whose trial or subscription has expired. Sourced from organizations table.', 'onclick="SuperAdmin.filterByKpi(\'license_status\', \'Expired\')"')}
+                ${OctaQube.kpiCardWithTooltip('Expired Subscriptions', kpi.expired, 'x-circle', 'gray', 'COUNT(organizations WHERE subscription_status=\'Expired\' OR license_expiry_date < NOW())', 'Tenants whose trial or subscription has expired. Sourced from organizations table.', 'onclick="SuperAdmin.filterByKpi(\'status\', \'Expired\')"')}
             `;
             // Force all cards onto a responsive grid with clean spacing
             grid.style.display = 'grid';
@@ -2281,28 +2281,26 @@ const SuperAdmin = {
             if (elFeature) elFeature.value = '';
             if (elLicStatus) elLicStatus.value = '';
             if (titleEl) titleEl.textContent = 'Registered Organizations';
-        } else if (type === 'status') {
+        } else if (type === 'status' || type === 'license_status') {
+            if (elPlan) elPlan.value = '';
             if (elStatus) elStatus.value = value;
+            if (elLicStatus) elLicStatus.value = value;
             if (titleEl) {
                 if (value === 'Expired') titleEl.textContent = 'Expired Subscription Organizations';
                 else if (value === 'Active') titleEl.textContent = 'Paid Organizations';
                 else if (value === 'Trialing') titleEl.textContent = 'On Trial Organizations';
                 else if (value === 'Suspended') titleEl.textContent = 'On Hold Organizations';
+                else if (value === 'Expiring Soon') titleEl.textContent = 'Expiring Soon Organizations';
+                else if (value === 'Inactive 20d' || value === 'Inactive') titleEl.textContent = 'Inactive (20d) Organizations';
                 else titleEl.textContent = `${value} Organizations`;
             }
         } else if (type === 'plan') {
+            if (elStatus) elStatus.value = '';
+            if (elLicStatus) elLicStatus.value = '';
             if (elPlan) elPlan.value = value;
             if (titleEl) titleEl.textContent = `${value} Plan Organizations`;
         } else if (type === 'feature') {
             if (elFeature) elFeature.value = value;
-        } else if (type === 'license_status') {
-            if (elStatus) elStatus.value = '';  // clear status dropdown to avoid double-filter
-            if (elLicStatus) elLicStatus.value = value;
-            if (titleEl) {
-                if (value === 'Expired') titleEl.textContent = 'Expired Subscription Organizations';
-                else if (value === 'Expiring Soon') titleEl.textContent = 'Expiring Soon Organizations';
-                else titleEl.textContent = `${value} Organizations`;
-            }
         }
         this.currentPage = 1;
         this.loadOrganizations();
@@ -2324,6 +2322,10 @@ const SuperAdmin = {
                 titleEl.textContent = 'On Trial Organizations';
             } else if (currentStatus === 'Suspended') {
                 titleEl.textContent = 'On Hold Organizations';
+            } else if (currentStatus === 'Expiring Soon') {
+                titleEl.textContent = 'Expiring Soon Organizations';
+            } else if (currentStatus === 'Inactive 20d' || currentStatus === 'Inactive') {
+                titleEl.textContent = 'Inactive (20d) Organizations';
             } else if (currentPlan) {
                 titleEl.textContent = `${currentPlan} Plan Organizations`;
             } else {
@@ -2356,6 +2358,10 @@ const SuperAdmin = {
                 ? 'On Trial'
                 : (effectiveStatus === 'Suspended' ? 'On Hold' : effectiveStatus);
 
+            const inactiveBadge = org.is_inactive_20d 
+                ? `<div class="mt-1"><span class="ds-badge" style="background:rgba(100,116,139,0.15);color:#64748b;font-size:10px;padding:2px 6px;display:inline-flex;align-items:center;gap:3px;" title="No user login activity in the last 20 days"><i data-lucide="user-x" style="width:10px;height:10px;"></i> Inactive (20d)</span></div>` 
+                : '';
+
             const trialInfo = org.trial_days_left !== null && org.trial_days_left !== undefined
                 ? `<div class="fw-bold" style="font-size: 13px; line-height: 1.4; color: ${org.trial_days_left <= 7 ? '#dc2626' : '#334155'};">${org.trial_days_left}d left</div>`
                 : (org.trial_ends_at ? `<div style="font-size: 12px; color: #475569;">${OctaQube.formatDate(org.trial_ends_at)}</div>` : '<span style="font-size: 12px; color: #94a3b8;">—</span>');
@@ -2377,7 +2383,7 @@ const SuperAdmin = {
                 <td class="col-users">
                     <div class="fw-bold" style="font-size:13px;">${org.user_count}<span class="fw-normal" style="color:#64748b;">/${(!org.max_users || org.max_users >= 99999) ? '∞' : org.max_users}</span></div>
                 </td>
-                <td class="col-status"><span class="ds-badge ${statColor}">${displayStatusText}</span></td>
+                <td class="col-status"><span class="ds-badge ${statColor}">${displayStatusText}</span>${inactiveBadge}</td>
                 <td class="col-trial">${trialInfo}</td>
                 <td class="text-end">
                     <div class="dropdown">

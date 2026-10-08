@@ -249,11 +249,7 @@ class FinancialMetricsEngine:
                 if latest_paid_inv and float(latest_paid_inv.total_amount or 0.0) > 0:
                     payg_amt = float(latest_paid_inv.total_amount)
                 else:
-                    try:
-                        brk = PaygBillingService.calculate_payg_bill_breakdown(s.org_id)
-                        payg_amt = float(brk.get('total_amount', 0.0))
-                    except Exception:
-                        payg_amt = 0.0
+                    payg_amt = 0.0
                 mrr_val += payg_amt
                 renewal_revenue += payg_amt
             else:
