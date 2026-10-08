@@ -60,9 +60,9 @@
         .lp-brand-wrapper {
             display: flex;
             align-items: center;
-            gap: 14px;
+            gap: 12px;
             min-width: 0;
-            flex: 1 1 auto;
+            flex: 0 1 auto;
             overflow: hidden;
         }
 
@@ -70,13 +70,14 @@
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            padding: 6px 14px;
-            border-radius: 10px;
-            background: rgba(255, 255, 255, 0.07);
+            padding: 5px 12px;
+            border-radius: 9px;
+            background: rgba(255, 255, 255, 0.08);
             border: 1px solid rgba(255, 255, 255, 0.2);
             transition: all 0.25s ease;
             text-decoration: none;
-            min-height: 48px;
+            height: 44px;
+            box-sizing: border-box;
             flex-shrink: 0;
         }
 
@@ -88,9 +89,9 @@
         }
 
         .ifqm-brand-link img {
-            height: 36px;
+            height: 30px;
             width: auto;
-            max-width: 195px;
+            max-width: 170px;
             object-fit: contain;
             display: block;
         }
@@ -100,27 +101,29 @@
             align-items: center;
             justify-content: center;
             padding: 4px 10px;
-            border-radius: 10px;
+            border-radius: 9px;
             background: #FFFFFF;
             border: 1px solid rgba(255, 255, 255, 0.95);
-            box-shadow: 0 3px 12px rgba(0, 0, 0, 0.2);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
             transition: all 0.25s ease;
             text-decoration: none;
-            min-height: 48px;
+            height: 44px;
+            box-sizing: border-box;
             flex-shrink: 0;
         }
 
         .software-brand-link:hover {
             background: #FFFFFF;
             transform: translateY(-1px);
-            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
             border-color: #FFFFFF;
         }
 
-        .software-brand-link img {
-            height: 36px;
+        .software-brand-link img,
+        .lp-software-logo-img {
+            height: 32px;
             width: auto;
-            max-width: 180px;
+            max-width: 160px;
             object-fit: contain;
             display: block;
         }
@@ -179,84 +182,116 @@
         }
 
         #lp-navbar-logo-slot.has-img {
-            background: transparent !important;
-            box-shadow: none !important;
+            background: #FFFFFF !important;
         }
 
         @media (max-width: 768px) {
             .lp-navbar {
-                padding: 10px 0 !important;
+                padding: 8px 0 !important;
             }
 
             .lp-navbar .container {
-                gap: 8px !important;
-                padding-left: 14px !important;
-                padding-right: 14px !important;
+                gap: 6px !important;
+                padding-left: 10px !important;
+                padding-right: 10px !important;
+                flex-wrap: nowrap !important;
             }
 
             .lp-brand-wrapper {
-                gap: 8px !important;
+                gap: 6px !important;
+                flex: 0 1 auto !important;
             }
 
             .ifqm-brand-link {
-                padding: 4px 8px !important;
-                border-radius: 8px !important;
-                min-height: 36px !important;
+                height: 34px !important;
+                min-height: 34px !important;
+                padding: 3px 6px !important;
+                border-radius: 7px !important;
             }
 
             .ifqm-brand-link img {
-                height: 24px !important;
-                max-width: 120px !important;
+                height: 20px !important;
+                max-width: 90px !important;
             }
 
             .software-brand-link {
-                padding: 3px 8px !important;
-                border-radius: 8px !important;
-                min-height: 36px !important;
+                height: 34px !important;
+                min-height: 34px !important;
+                padding: 2px 6px !important;
+                border-radius: 7px !important;
             }
 
-            .software-brand-link img {
-                height: 24px !important;
-                max-width: 110px !important;
-            }
-
-            .lp-brand-name {
-                font-size: 0.95rem !important;
-                max-width: calc(100vw - 205px) !important;
+            .software-brand-link img,
+            .lp-software-logo-img {
+                height: 22px !important;
+                max-width: 80px !important;
             }
 
             .lp-navbar .auth-pill {
-                padding: 6px 12px !important;
-                font-size: 13px !important;
-                border-radius: 8px !important;
-            }
-
-            .lp-navbar-actions .ds-btn {
-                padding: 6px 13px !important;
-                font-size: 12.5px !important;
-                border-radius: 8px !important;
-            }
-
-            #lp-navbar-logo-slot {
-                width: 32px !important;
-                height: 32px !important;
-            }
-        }
-
-        @media (max-width: 380px) {
-            .lp-brand-name {
-                font-size: 0.85rem !important;
-                max-width: calc(100vw - 180px) !important;
-            }
-
-            .lp-navbar .auth-pill {
-                padding: 5px 9px !important;
+                padding: 5px 10px !important;
                 font-size: 12px !important;
+                border-radius: 7px !important;
+            }
+
+            .lp-navbar-actions {
+                gap: 6px !important;
             }
 
             .lp-navbar-actions .ds-btn {
                 padding: 5px 10px !important;
-                font-size: 11.5px !important;
+                font-size: 12px !important;
+                border-radius: 7px !important;
+            }
+        }
+
+        @media (max-width: 380px) {
+            .lp-navbar .container {
+                padding-left: 6px !important;
+                padding-right: 6px !important;
+                gap: 4px !important;
+            }
+
+            .lp-brand-wrapper {
+                gap: 4px !important;
+            }
+
+            .ifqm-brand-link {
+                height: 30px !important;
+                min-height: 30px !important;
+                padding: 2px 4px !important;
+                border-radius: 6px !important;
+            }
+
+            .ifqm-brand-link img {
+                height: 17px !important;
+                max-width: 72px !important;
+            }
+
+            .software-brand-link {
+                height: 30px !important;
+                min-height: 30px !important;
+                padding: 2px 4px !important;
+                border-radius: 6px !important;
+            }
+
+            .software-brand-link img,
+            .lp-software-logo-img {
+                height: 19px !important;
+                max-width: 65px !important;
+            }
+
+            .lp-navbar-actions {
+                gap: 4px !important;
+            }
+
+            .lp-navbar .auth-pill {
+                padding: 4px 7px !important;
+                font-size: 11px !important;
+            }
+
+            .lp-navbar-actions .ds-btn {
+                padding: 4px 7px !important;
+                font-size: 11px !important;
             }
         }
 
@@ -429,7 +464,7 @@
 
                 <!-- 2. Software Logo (Kalpion / Platform Logo in white card) -->
                 <a href="/index.html" class="software-brand-link" id="lp-navbar-logo-slot" title="Home">
-                    <img src="/assets/images/kalpion-logo.png" alt="Kalpion Logo" style="height:36px; max-width:180px; object-fit:contain; display:block;">
+                    <img src="/assets/images/kalpion-logo.png" alt="Kalpion Logo" class="lp-software-logo-img">
                 </a>
             </div>
             <div class="lp-navbar-actions">
@@ -881,7 +916,7 @@
                             <img src="/assets/images/ifqm-logo.svg" alt="IFQM - Indian Foundation for Quality Management" onerror="this.src='/assets/images/ifqm-logo.png';">
                         </a>
                         <a href="/index.html" class="software-brand-link" id="lp-footer-logo-slot" title="Home">
-                            <img src="/assets/images/kalpion-logo.png" alt="Kalpion Logo" style="height:36px; max-width:180px; object-fit:contain; display:block;">
+                            <img src="/assets/images/kalpion-logo.png" alt="Kalpion Logo" class="lp-software-logo-img">
                         </a>
                     </div>
                     <p class="mb-4" id="lp-footer-desc" style="max-width: 320px; color:#DAE0E7; line-height: 1.6;">The world's most advanced quality management system for modern manufacturing and enterprise excellence. Built for scale, security, and precision.</p>
@@ -1015,11 +1050,11 @@
                     const initialLogoSrc = initialLogo.includes('/uploads/') ? (initialLogo + (initialLogo.includes('?') ? '&' : '?') + 't=' + Date.now()) : initialLogo;
                     const navLogoSlot = document.getElementById('lp-navbar-logo-slot');
                     if (navLogoSlot) {
-                        navLogoSlot.innerHTML = `<img src="${initialLogoSrc}" alt="Software Logo" style="height:36px; max-width:195px; object-fit:contain; display:block;" onerror="this.outerHTML='<i data-lucide=\\'shield-check\\' style=\\'width:24px;height:24px;color:#C4A25A;\\'></i>'; if(window.lucide) lucide.createIcons();">`;
+                        navLogoSlot.innerHTML = `<img src="${initialLogoSrc}" alt="Software Logo" class="lp-software-logo-img" onerror="this.outerHTML='<i data-lucide=\\'shield-check\\' style=\\'width:24px;height:24px;color:#C4A25A;\\'></i>'; if(window.lucide) lucide.createIcons();">`;
                     }
                     const footerLogoSlot = document.getElementById('lp-footer-logo-slot');
                     if (footerLogoSlot) {
-                        footerLogoSlot.innerHTML = `<img src="${initialLogoSrc}" alt="Software Logo" style="height:36px; max-width:195px; object-fit:contain; display:block;" onerror="this.outerHTML='<i data-lucide=\\'shield-check\\' style=\\'width:24px;height:24px;color:#C4A25A;\\'></i>'; if(window.lucide) lucide.createIcons();">`;
+                        footerLogoSlot.innerHTML = `<img src="${initialLogoSrc}" alt="Software Logo" class="lp-software-logo-img" onerror="this.outerHTML='<i data-lucide=\\'shield-check\\' style=\\'width:24px;height:24px;color:#C4A25A;\\'></i>'; if(window.lucide) lucide.createIcons();">`;
                     }
                 }
             } catch (_) {}
@@ -1080,11 +1115,11 @@
                             
                             const navLogoSlot = document.getElementById('lp-navbar-logo-slot');
                             if (navLogoSlot) {
-                                navLogoSlot.innerHTML = `<img src="${logoSrcWithBust}" alt="Software Logo" style="height:36px; max-width:195px; object-fit:contain; display:block;" onerror="this.outerHTML='<i data-lucide=\\'shield-check\\' style=\\'width:24px;height:24px;color:#C4A25A;\\'></i>'; if(window.lucide) lucide.createIcons();">`;
+                                navLogoSlot.innerHTML = `<img src="${logoSrcWithBust}" alt="Software Logo" class="lp-software-logo-img" onerror="this.outerHTML='<i data-lucide=\\'shield-check\\' style=\\'width:24px;height:24px;color:#C4A25A;\\'></i>'; if(window.lucide) lucide.createIcons();">`;
                             }
                             const footerLogoSlot = document.getElementById('lp-footer-logo-slot');
                             if (footerLogoSlot) {
-                                footerLogoSlot.innerHTML = `<img src="${logoSrcWithBust}" alt="Software Logo" style="height:36px; max-width:195px; object-fit:contain; display:block;" onerror="this.outerHTML='<i data-lucide=\\'shield-check\\' style=\\'width:24px;height:24px;color:#C4A25A;\\'></i>'; if(window.lucide) lucide.createIcons();">`;
+                                footerLogoSlot.innerHTML = `<img src="${logoSrcWithBust}" alt="Software Logo" class="lp-software-logo-img" onerror="this.outerHTML='<i data-lucide=\\'shield-check\\' style=\\'width:24px;height:24px;color:#C4A25A;\\'></i>'; if(window.lucide) lucide.createIcons();">`;
                             }
                         }
 
