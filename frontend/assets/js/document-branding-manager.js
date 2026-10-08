@@ -49,24 +49,24 @@ const DocIdentityManager = {
         this.setValue('di-city-pin', 'Mumbai 400051');
 
         // Contacts
-        this.setValue('di-email-general', ctx.general_email);
-        this.setValue('di-sender-general', ctx.general_sender_name || 'OctaQube General Info');
-        this.setValue('di-email-support', ctx.support_email);
-        this.setValue('di-sender-support', ctx.support_sender_name || 'OctaQube Customer Support');
-        this.setValue('di-email-billing', ctx.billing_email);
-        this.setValue('di-sender-billing', ctx.billing_sender_name || 'OctaQube Accounts & Billing');
-        this.setValue('di-email-otp', ctx.otp_email || 'otp-auth@octaqube.com');
-        this.setValue('di-sender-otp', ctx.otp_sender_name || 'OctaQube OTP Verification');
-        this.setValue('di-email-contact', ctx.contact_email || 'contact@octaqube.com');
-        this.setValue('di-sender-contact', ctx.contact_sender_name || 'OctaQube Business Inquiries');
-        this.setValue('di-email-alerts', ctx.alerts_email || 'alerts@octaqube.com');
-        this.setValue('di-sender-alerts', ctx.alerts_sender_name || 'OctaQube System Alerts');
-        this.setValue('di-email-feedback', ctx.feedback_email || 'feedback@octaqube.com');
-        this.setValue('di-sender-feedback', ctx.feedback_sender_name || 'OctaQube Product Feedback');
-        this.setValue('di-email-onboarding', ctx.onboarding_email || 'onboarding@octaqube.com');
-        this.setValue('di-sender-onboarding', ctx.onboarding_sender_name || 'OctaQube User Onboarding');
-        this.setValue('di-phone-general', ctx.general_phone);
-        this.setValue('di-phone-emergency', ctx.emergency_phone || '+91 98765 43210');
+        this.setValue('di-email-general', ctx.general_email || '');
+        this.setValue('di-sender-general', ctx.general_sender_name || '');
+        this.setValue('di-email-support', ctx.support_email || '');
+        this.setValue('di-sender-support', ctx.support_sender_name || '');
+        this.setValue('di-email-billing', ctx.billing_email || '');
+        this.setValue('di-sender-billing', ctx.billing_sender_name || '');
+        this.setValue('di-email-otp', ctx.otp_email || '');
+        this.setValue('di-sender-otp', ctx.otp_sender_name || '');
+        this.setValue('di-email-contact', ctx.contact_email || '');
+        this.setValue('di-sender-contact', ctx.contact_sender_name || '');
+        this.setValue('di-email-alerts', ctx.alerts_email || '');
+        this.setValue('di-sender-alerts', ctx.alerts_sender_name || '');
+        this.setValue('di-email-feedback', ctx.feedback_email || '');
+        this.setValue('di-sender-feedback', ctx.feedback_sender_name || '');
+        this.setValue('di-email-onboarding', ctx.onboarding_email || '');
+        this.setValue('di-sender-onboarding', ctx.onboarding_sender_name || '');
+        this.setValue('di-phone-general', ctx.general_phone || '');
+        this.setValue('di-phone-emergency', ctx.emergency_phone || ctx.emergency_contact || '');
     },
 
     setValue(id, val) {
@@ -97,6 +97,7 @@ const DocIdentityManager = {
                 software_short_name: document.getElementById('di-software-short')?.value,
                 software_display_name: document.getElementById('di-software-display')?.value,
                 platform_title: document.getElementById('di-platform-title')?.value,
+                platform_subtitle: document.getElementById('di-platform-subtitle')?.value,
                 default_currency: document.getElementById('di-currency')?.value,
                 footer_copyright: document.getElementById('di-footer-copyright')?.value
             };

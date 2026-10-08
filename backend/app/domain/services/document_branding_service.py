@@ -29,6 +29,9 @@ class DocumentBrandingService:
         try:
             from app.domain.services.cache_service import CacheService
             CacheService.invalidate_tenant_branding(org_id)
+            if org_id is not None:
+                CacheService.invalidate_tenant_branding(None)
+            CacheService.invalidate_global_platform_settings()
         except Exception:
             pass
 
@@ -54,22 +57,22 @@ class DocumentBrandingService:
     def _build_branding_context(cls, org_id=None):
         cache_key = f"context:{org_id}"
 
-        # Fetch Global Defaults
-        platform = PlatformIdentityConfig.query.filter_by(org_id=None).first()
-        company = CompanyInformationConfig.query.filter_by(org_id=None).first()
-        contacts = CompanyContactsConfig.query.filter_by(org_id=None).first()
-        addresses = CompanyAddressesConfig.query.filter_by(org_id=None).first()
-        assets = BrandingAssetsConfig.query.filter_by(org_id=None).first()
+        # Fetch Global Defaults with deterministic ordering
+        platform = PlatformIdentityConfig.query.filter_by(org_id=None).order_by(PlatformIdentityConfig.id.asc()).first()
+        company = CompanyInformationConfig.query.filter_by(org_id=None).order_by(CompanyInformationConfig.id.asc()).first()
+        contacts = CompanyContactsConfig.query.filter_by(org_id=None).order_by(CompanyContactsConfig.id.asc()).first()
+        addresses = CompanyAddressesConfig.query.filter_by(org_id=None).order_by(CompanyAddressesConfig.id.asc()).first()
+        assets = BrandingAssetsConfig.query.filter_by(org_id=None).order_by(BrandingAssetsConfig.id.asc()).first()
 
         # If org_id provided, check for custom org identity overrides
         org_obj = None
         if org_id:
             org_obj = db.session.get(Organization, org_id)
-            org_plat = PlatformIdentityConfig.query.filter_by(org_id=org_id).first()
-            org_comp = CompanyInformationConfig.query.filter_by(org_id=org_id).first()
-            org_cont = CompanyContactsConfig.query.filter_by(org_id=org_id).first()
-            org_addr = CompanyAddressesConfig.query.filter_by(org_id=org_id).first()
-            org_assets = BrandingAssetsConfig.query.filter_by(org_id=org_id).first()
+            org_plat = PlatformIdentityConfig.query.filter_by(org_id=org_id).order_by(PlatformIdentityConfig.id.asc()).first()
+            org_comp = CompanyInformationConfig.query.filter_by(org_id=org_id).order_by(CompanyInformationConfig.id.asc()).first()
+            org_cont = CompanyContactsConfig.query.filter_by(org_id=org_id).order_by(CompanyContactsConfig.id.asc()).first()
+            org_addr = CompanyAddressesConfig.query.filter_by(org_id=org_id).order_by(CompanyAddressesConfig.id.asc()).first()
+            org_assets = BrandingAssetsConfig.query.filter_by(org_id=org_id).order_by(BrandingAssetsConfig.id.asc()).first()
 
             if org_plat: platform = org_plat
             if org_comp: company = org_comp

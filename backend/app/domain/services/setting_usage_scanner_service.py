@@ -10,26 +10,32 @@ class SettingUsageScannerService:
 
     @staticmethod
     def seed_initial_defaults():
-        """Ensure default identity, company info, document templates and usage mappings exist."""
+        """Ensure default identity, company info, document templates and usage mappings exist without duplicates."""
+        def _dedup_and_ensure(model_cls, default_kwargs=None):
+            rows = model_cls.query.filter_by(org_id=None).order_by(model_cls.id.asc()).all()
+            if not rows:
+                primary = model_cls(org_id=None, **(default_kwargs or {}))
+                db.session.add(primary)
+            else:
+                # Keep first, delete any duplicates
+                if len(rows) > 1:
+                    for duplicate in rows[1:]:
+                        db.session.delete(duplicate)
+
         # 1. Platform Identity
-        if PlatformIdentityConfig.query.filter_by(org_id=None).first() is None:
-            db.session.add(PlatformIdentityConfig(org_id=None))
+        _dedup_and_ensure(PlatformIdentityConfig)
 
         # 2. Company Info
-        if CompanyInformationConfig.query.filter_by(org_id=None).first() is None:
-            db.session.add(CompanyInformationConfig(org_id=None))
+        _dedup_and_ensure(CompanyInformationConfig)
 
         # 3. Company Contacts
-        if CompanyContactsConfig.query.filter_by(org_id=None).first() is None:
-            db.session.add(CompanyContactsConfig(org_id=None))
+        _dedup_and_ensure(CompanyContactsConfig)
 
         # 4. Company Addresses
-        if CompanyAddressesConfig.query.filter_by(org_id=None).first() is None:
-            db.session.add(CompanyAddressesConfig(org_id=None))
+        _dedup_and_ensure(CompanyAddressesConfig)
 
         # 5. Branding Assets
-        if BrandingAssetsConfig.query.filter_by(org_id=None).first() is None:
-            db.session.add(BrandingAssetsConfig(org_id=None))
+        _dedup_and_ensure(BrandingAssetsConfig)
 
         db.session.commit()
 

@@ -6919,24 +6919,24 @@
                     this.setValue('di-country', ctx.country);
                     this.setValue('di-state', ctx.state);
                     this.setValue('di-city-pin', ctx.city_pin);
-                    this.setValue('sa-di-email-general', ctx.general_email);
-                    this.setValue('sa-di-sender-general', ctx.general_sender_name || 'OctaQube General Info');
-                    this.setValue('sa-di-email-support', ctx.support_email);
-                    this.setValue('sa-di-sender-support', ctx.support_sender_name || 'OctaQube Customer Support');
-                    this.setValue('sa-di-email-billing', ctx.billing_email);
-                    this.setValue('sa-di-sender-billing', ctx.billing_sender_name || 'OctaQube Accounts & Billing');
-                    this.setValue('sa-di-email-otp', ctx.otp_email || 'otp-auth@octaqube.com');
-                    this.setValue('sa-di-sender-otp', ctx.otp_sender_name || 'OctaQube OTP Verification');
-                    this.setValue('sa-di-email-contact', ctx.contact_email || 'contact@octaqube.com');
-                    this.setValue('sa-di-sender-contact', ctx.contact_sender_name || 'OctaQube Business Inquiries');
-                    this.setValue('sa-di-email-alerts', ctx.alerts_email || 'alerts@octaqube.com');
-                    this.setValue('sa-di-sender-alerts', ctx.alerts_sender_name || 'OctaQube System Alerts');
-                    this.setValue('sa-di-email-feedback', ctx.feedback_email || 'feedback@octaqube.com');
-                    this.setValue('sa-di-sender-feedback', ctx.feedback_sender_name || 'OctaQube Product Feedback');
-                    this.setValue('sa-di-email-onboarding', ctx.onboarding_email || 'onboarding@octaqube.com');
-                    this.setValue('sa-di-sender-onboarding', ctx.onboarding_sender_name || 'OctaQube User Onboarding');
-                    this.setValue('sa-di-phone-general', ctx.general_phone);
-                    this.setValue('sa-di-phone-emergency', ctx.emergency_phone || ctx.emergency_contact);
+                    this.setValue('sa-di-email-general', ctx.general_email || '');
+                    this.setValue('sa-di-sender-general', ctx.general_sender_name || '');
+                    this.setValue('sa-di-email-support', ctx.support_email || '');
+                    this.setValue('sa-di-sender-support', ctx.support_sender_name || '');
+                    this.setValue('sa-di-email-billing', ctx.billing_email || '');
+                    this.setValue('sa-di-sender-billing', ctx.billing_sender_name || '');
+                    this.setValue('sa-di-email-otp', ctx.otp_email || '');
+                    this.setValue('sa-di-sender-otp', ctx.otp_sender_name || '');
+                    this.setValue('sa-di-email-contact', ctx.contact_email || '');
+                    this.setValue('sa-di-sender-contact', ctx.contact_sender_name || '');
+                    this.setValue('sa-di-email-alerts', ctx.alerts_email || '');
+                    this.setValue('sa-di-sender-alerts', ctx.alerts_sender_name || '');
+                    this.setValue('sa-di-email-feedback', ctx.feedback_email || '');
+                    this.setValue('sa-di-sender-feedback', ctx.feedback_sender_name || '');
+                    this.setValue('sa-di-email-onboarding', ctx.onboarding_email || '');
+                    this.setValue('sa-di-sender-onboarding', ctx.onboarding_sender_name || '');
+                    this.setValue('sa-di-phone-general', ctx.general_phone || '');
+                    this.setValue('sa-di-phone-emergency', ctx.emergency_phone || ctx.emergency_contact || '');
 
                     // Logo preview & badge - check localStorage brand assets first, then ctx.logo_url
                     let currentLogo = ctx.logo_url;
@@ -7102,6 +7102,7 @@
                         software_short_name: getVal('di-software-short'), 
                         software_display_name: getVal('di-software-display'), 
                         platform_title: getVal('di-platform-title'), 
+                        platform_subtitle: getVal('di-platform-subtitle'), 
                         footer_copyright: getVal('di-footer-copyright') 
                     };
                 } else if (section === 'company') {
