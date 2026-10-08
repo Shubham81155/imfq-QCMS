@@ -2831,8 +2831,8 @@ const SuperAdmin = {
                                     <tr>
                                         <td>${it.description}</td>
                                         <td>${it.quantity}</td>
-                                        <td>₹${Number(it.unit_price).toLocaleString('en-IN')}</td>
-                                        <td class="fw-bold">₹${Number(it.amount).toLocaleString('en-IN')}</td>
+                                        <td>₹${Number(it.unit_price).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                                        <td class="fw-bold">₹${Number(it.amount).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                                     </tr>
                                 `).join('')}
                             </tbody>
@@ -9988,7 +9988,37 @@ const SuperAdmin = {
             const d = result.data;
             if (recipientInput) recipientInput.value = d.recipient_email || `${orgName.toLowerCase().replace(/\s+/g, '')}@octaqube-tenant.com`;
             if (subjectInput) subjectInput.value = d.subject || `Monthly Metered Invoice - ${orgName}`;
-            if (totalEl) totalEl.textContent = d.estimated_total_fmt || `₹${d.estimated_total}`;
+
+            const subtotalVal = (d.subtotal !== undefined && d.subtotal !== null && d.subtotal > 0)
+                ? d.subtotal
+                : ((d.subtotal_amount !== undefined && d.subtotal_amount !== null && d.subtotal_amount > 0)
+                    ? d.subtotal_amount
+                    : (d.line_items || []).reduce((acc, item) => acc + (parseFloat(item.line_total) || 0), 0));
+
+            const gstPct = d.gst_percent || d.tax_percent || 18;
+            const taxVal = (d.tax_amount !== undefined && d.tax_amount !== null && d.tax_amount > 0)
+                ? d.tax_amount
+                : ((d.gst_amount !== undefined && d.gst_amount !== null && d.gst_amount > 0)
+                    ? d.gst_amount
+                    : (subtotalVal * (gstPct / 100)));
+
+            const totalVal = (d.estimated_total !== undefined && d.estimated_total !== null && d.estimated_total > 0)
+                ? d.estimated_total
+                : ((d.total_amount !== undefined && d.total_amount !== null && d.total_amount > 0)
+                    ? d.total_amount
+                    : (subtotalVal + taxVal));
+
+            const subtotalFmt = d.subtotal_fmt && d.subtotal_fmt !== '₹0.00' && d.subtotal_fmt !== '₹0'
+                ? d.subtotal_fmt
+                : `₹${subtotalVal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+            const taxFmt = d.tax_amount_fmt && d.tax_amount_fmt !== '₹0.00' && d.tax_amount_fmt !== '₹0'
+                ? d.tax_amount_fmt
+                : `₹${taxVal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+            const totalFmt = d.estimated_total_fmt || `₹${totalVal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+            if (totalEl) totalEl.textContent = totalFmt;
 
             const windowEl = document.getElementById('paygEmailHeaderWindow');
             if (windowEl) windowEl.textContent = `Billing Period: ${d.period_start} to ${d.period_end}`;
@@ -10058,9 +10088,9 @@ const SuperAdmin = {
                             </tbody>
                         </table>
                         <div style="background:#f8fafc;padding:14px 16px;border-top:1px solid #e2e8f0;text-align:right;">
-                            <div style="font-size:12px;color:#64748b;margin-bottom:3px;">Subtotal (Excl. Tax): ${d.subtotal_fmt}</div>
-                            <div style="font-size:12px;color:#64748b;margin-bottom:6px;">GST (18% Standard): ${d.tax_amount_fmt}</div>
-                            <div style="font-size:16px;font-weight:800;color:#4f46e5;">Total Amount Payable: ${d.estimated_total_fmt}</div>
+                            <div style="font-size:12px;color:#64748b;margin-bottom:3px;">Subtotal (Excl. Tax): ${subtotalFmt}</div>
+                            <div style="font-size:12px;color:#64748b;margin-bottom:6px;">GST (${gstPct}% Standard): ${taxFmt}</div>
+                            <div style="font-size:16px;font-weight:800;color:#4f46e5;">Total Amount Payable: ${totalFmt}</div>
                         </div>
                     </div>
 

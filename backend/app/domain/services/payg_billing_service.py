@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from app.infrastructure.database.models.models import (
     db, Organization, User, Project, Department, Plant, Subscription,
-    SubscriptionInvoice, SaaSPlan, Notification
+    SubscriptionInvoice, InvoiceItem, SaaSPlan, Notification
 )
 from app.domain.services.storage_calculator_service import calculate_org_storage_realtime
 from app.infrastructure.mailer.email_service import EmailUtils
@@ -337,9 +337,12 @@ class PaygBillingService:
             "metrics": metrics,
             "rules": rules,
             "line_items": line_items,
+            "subtotal": round(subtotal, 2),
             "subtotal_amount": round(subtotal, 2),
             "discount_amount": 0.0,
+            "tax_percent": tax_pct,
             "gst_percent": tax_pct,
+            "tax_amount": gst_amount,
             "gst_amount": gst_amount,
             "total_amount": total_amount,
             "latest_invoice": latest_inv_info,
@@ -439,6 +442,20 @@ class PaygBillingService:
         )
 
         db.session.add(invoice)
+        db.session.flush()
+
+        for it in breakdown.get('line_items', []):
+            desc = it.get('metric', '')
+            if it.get('description'):
+                desc = f"{desc} ({it.get('description')})"
+            db.session.add(InvoiceItem(
+                invoice_id=invoice.id,
+                description=desc or 'Metered Resource Item',
+                quantity=int(it.get('billable_units', it.get('units_used', 1)) or 1),
+                unit_price=float(it.get('unit_price', 0.0)),
+                amount=float(it.get('line_total', 0.0))
+            ))
+
         if sub:
             sub.last_metered_billing_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
