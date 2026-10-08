@@ -9824,7 +9824,41 @@ const SuperAdmin = {
                 return;
             }
 
-            tbody.innerHTML = data.map(d => `
+            tbody.innerHTML = data.map(d => {
+                const invStatus = d.billing_status || (d.latest_invoice ? d.latest_invoice.status : 'Unbilled');
+                const isPaid = invStatus === 'Paid' || d.is_paid;
+                const isPending = invStatus === 'Pending Verification' || invStatus === 'Sent' || invStatus === 'Issued';
+                
+                let statusBadge = '';
+                let actionBtn = '';
+                
+                if (isPaid) {
+                    const paidAmt = d.latest_invoice?.total_amount ? this._planFmt(d.latest_invoice.total_amount) : this._planFmt(d.total_amount || 0);
+                    statusBadge = `<span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1"><i data-lucide="check-circle" style="width:12px;height:12px;" class="me-1"></i>Paid (${paidAmt})</span>`;
+                    actionBtn = `
+                        <button class="ds-btn ds-btn-sm ds-btn-outline-secondary text-nowrap" onclick="SuperAdmin.executeSinglePaygBill(${d.org_id}, '${d.org_name.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')">
+                            <i data-lucide="file-text" style="width:12px;height:12px;"></i> View Bill
+                        </button>
+                    `;
+                } else if (isPending) {
+                    const statusLabel = invStatus === 'Pending Verification' ? 'Verifying' : 'Bill Sent';
+                    const billAmt = d.latest_invoice?.total_amount ? this._planFmt(d.latest_invoice.total_amount) : this._planFmt(d.total_amount || 0);
+                    statusBadge = `<span class="badge bg-warning-subtle text-warning border border-warning-subtle px-2 py-1"><i data-lucide="clock" style="width:12px;height:12px;" class="me-1"></i>${statusLabel} (${billAmt})</span>`;
+                    actionBtn = `
+                        <button class="ds-btn ds-btn-sm ds-btn-secondary text-nowrap" onclick="SuperAdmin.executeSinglePaygBill(${d.org_id}, '${d.org_name.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')">
+                            <i data-lucide="send" style="width:12px;height:12px;"></i> Resend Bill
+                        </button>
+                    `;
+                } else {
+                    statusBadge = `<strong class="text-primary font-bold">${this._planFmt(d.total_amount || 0)}</strong>`;
+                    actionBtn = `
+                        <button class="ds-btn ds-btn-sm ds-btn-secondary text-nowrap" onclick="SuperAdmin.executeSinglePaygBill(${d.org_id}, '${d.org_name.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')">
+                            <i data-lucide="send" style="width:12px;height:12px;"></i> Send Bill
+                        </button>
+                    `;
+                }
+
+                return `
                 <tr>
                     <td>
                         <strong class="d-block text-main">${d.org_name}</strong>
@@ -9844,14 +9878,13 @@ const SuperAdmin = {
                         <div class="text-xxs text-muted"><span class="fw-bold text-dark">${d.metrics.plants_count || 0}</span> sites (${d.rules.location_free_tier || 0} free)</div>
                     </td>
                     <td>${this._planFmt(d.rules.base_fee || 999)}</td>
-                    <td><strong class="text-primary font-bold">${this._planFmt(d.total_amount || 0)}</strong></td>
+                    <td>${statusBadge}</td>
                     <td class="text-end">
-                        <button class="ds-btn ds-btn-sm ds-btn-secondary text-nowrap" onclick="SuperAdmin.executeSinglePaygBill(${d.org_id}, '${d.org_name.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')">
-                            <i data-lucide="send" style="width:12px;height:12px;"></i> Send Bill
-                        </button>
+                        ${actionBtn}
                     </td>
                 </tr>
-            `).join('');
+                `;
+            }).join('');
 
             if (window.lucide) lucide.createIcons();
         } catch(e) {
