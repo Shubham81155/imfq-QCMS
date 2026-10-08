@@ -99,7 +99,7 @@ def update_document_identity():
         payload = data.get('payload', {})
 
         if section == 'platform':
-            cfg = PlatformIdentityConfig.query.filter_by(org_id=org_id).first()
+            cfg = PlatformIdentityConfig.query.filter_by(org_id=org_id).order_by(PlatformIdentityConfig.id.asc()).first()
             if not cfg:
                 cfg = PlatformIdentityConfig(org_id=org_id)
                 db.session.add(cfg)
@@ -108,8 +108,30 @@ def update_document_identity():
                 if hasattr(cfg, k):
                     setattr(cfg, k, v)
 
+            # If global platform settings, sync to PlatformSettings table so Super Admin & global UI see updates
+            if org_id is None:
+                try:
+                    from app.infrastructure.database.models.billing import PlatformSettings
+                    sys_settings = PlatformSettings.query.first()
+                    if sys_settings:
+                        bs = dict(sys_settings.branding_settings or {})
+                        if cfg.software_name:
+                            bs['app_name'] = cfg.software_name
+                            bs['company_name'] = cfg.software_name
+                        if cfg.software_short_name:
+                            bs['short_name'] = cfg.software_short_name
+                        if cfg.platform_title:
+                            bs['platform_title'] = cfg.platform_title
+                        if cfg.platform_subtitle:
+                            bs['platform_subtitle'] = cfg.platform_subtitle
+                        if cfg.footer_copyright:
+                            bs['footer_copyright'] = cfg.footer_copyright
+                        sys_settings.branding_settings = bs
+                except Exception:
+                    pass
+
         elif section == 'company':
-            cfg = CompanyInformationConfig.query.filter_by(org_id=org_id).first()
+            cfg = CompanyInformationConfig.query.filter_by(org_id=org_id).order_by(CompanyInformationConfig.id.asc()).first()
             if not cfg:
                 cfg = CompanyInformationConfig(org_id=org_id)
                 db.session.add(cfg)
@@ -119,20 +141,20 @@ def update_document_identity():
                     setattr(cfg, k, v)
 
         elif section == 'contacts':
-            cfg = CompanyContactsConfig.query.filter_by(org_id=org_id).first()
+            cfg = CompanyContactsConfig.query.filter_by(org_id=org_id).order_by(CompanyContactsConfig.id.asc()).first()
             if not cfg:
                 cfg = CompanyContactsConfig(org_id=org_id)
                 db.session.add(cfg)
 
             for k, v in payload.items():
-                if k == 'emergency_phone':
-                    cfg.emergency_contact = v
+                if k in ('emergency_phone', 'emergency_contact'):
+                    cfg.emergency_contact = (v or '').strip()
                 elif hasattr(cfg, k):
                     val_str = (v or '').strip()
                     setattr(cfg, k, val_str)
 
         elif section == 'addresses':
-            cfg = CompanyAddressesConfig.query.filter_by(org_id=org_id).first()
+            cfg = CompanyAddressesConfig.query.filter_by(org_id=org_id).order_by(CompanyAddressesConfig.id.asc()).first()
             if not cfg:
                 cfg = CompanyAddressesConfig(org_id=org_id)
                 db.session.add(cfg)
@@ -158,7 +180,7 @@ def update_document_identity():
         elif section == 'template':
             template_key = payload.get('template_key')
             if template_key:
-                tmpl = DocumentTemplateConfig.query.filter_by(template_key=template_key, org_id=org_id).first()
+                tmpl = DocumentTemplateConfig.query.filter_by(template_key=template_key, org_id=org_id).order_by(DocumentTemplateConfig.id.asc()).first()
                 if not tmpl:
                     tmpl = DocumentTemplateConfig(org_id=org_id, template_key=template_key, template_name=payload.get('template_name', template_key.title()))
                     db.session.add(tmpl)
@@ -168,7 +190,7 @@ def update_document_identity():
                         setattr(tmpl, k, v)
 
         db.session.commit()
-        DocumentBrandingService.invalidate_cache()
+        DocumentBrandingService.invalidate_cache(org_id)
 
         ctx = DocumentBrandingService.get_branding_context(org_id)
 
