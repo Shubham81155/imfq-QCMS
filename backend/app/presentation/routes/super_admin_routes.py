@@ -741,6 +741,7 @@ def list_companies():
                 "auto_approved_trial_extensions": auto_approved,
                 "manual_approved_trial_extensions": manual_approved,
                 "trial_extension_count": getattr(org, 'trial_extension_count', 0) or 0,
+                "is_inactive_20d": _is_inactive_20d(org),
                 "enabled_modules": getattr(org, 'enabled_modules', ['7-qc-tools']) or ['7-qc-tools'],
                 "is_deleted": getattr(org, 'is_deleted', False)
             })
@@ -759,6 +760,7 @@ def list_companies():
                 "plan_name": getattr(org, 'subscription_plan', 'Starter') or "Starter",
                 "plan_category": getattr(org, 'subscription_plan', 'Starter') or "Starter",
                 "status": getattr(org, 'subscription_status', 'Active') or "Active",
+                "is_inactive_20d": False,
                 "user_count": 0,
                 "max_users": getattr(org, 'max_users', 50) or 50,
                 "dept_count": 0,
