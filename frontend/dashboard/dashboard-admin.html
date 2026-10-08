@@ -780,7 +780,7 @@
                     const stats = await api.get('/admin/stats');
                     if (grid) {
                         grid.innerHTML =
-                            OctaQube.kpiCard('Active Projects', stats.active_projects || 0, 'folder-kanban', 'blue', null, '/projects/projects-repository.html?status=Active') +
+                            OctaQube.kpiCard('Current Projects', stats.active_projects || 0, 'folder-kanban', 'blue', null, '/projects/projects-repository.html?status=Active') +
                             OctaQube.kpiCard('Team Stakeholders', stats.total_members || 0, 'users', 'purple', null, '/admin/users.html') +
                             OctaQube.kpiCard('Projects Completed', stats.completed_projects || 0, 'check-circle', 'green', null, '/projects/projects-repository.html?status=Completed') +
                             OctaQube.kpiCard('Stopped Projects', stats.rejected_projects || 0, 'x-circle', 'red', null, 'javascript:adminDash.openRejectedProjectsModal()') +

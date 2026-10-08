@@ -300,6 +300,32 @@ class PaygBillingService:
         gst_amount = round(subtotal * (tax_pct / 100.0), 2)
         total_amount = round(subtotal + gst_amount, 2)
 
+        # Check latest invoice for this org to determine billing lifecycle status
+        latest_inv = SubscriptionInvoice.query.filter_by(org_id=org_id)\
+            .order_by(SubscriptionInvoice.created_at.desc()).first()
+
+        latest_inv_info = None
+        billing_status = 'Unbilled'
+        is_paid = False
+        is_pending = False
+        if latest_inv:
+            latest_inv_info = {
+                "id": latest_inv.id,
+                "invoice_number": latest_inv.invoice_number,
+                "invoice_uid": latest_inv.invoice_uid,
+                "status": latest_inv.invoice_status,
+                "total_amount": float(latest_inv.total_amount or 0.0),
+                "created_at": latest_inv.created_at.strftime('%Y-%m-%d') if latest_inv.created_at else None,
+                "period_start": latest_inv.billing_period_start.strftime('%Y-%m-%d') if latest_inv.billing_period_start else None,
+                "period_end": latest_inv.billing_period_end.strftime('%Y-%m-%d') if latest_inv.billing_period_end else None
+            }
+            if latest_inv.invoice_status == 'Paid':
+                is_paid = True
+                billing_status = 'Paid'
+            elif latest_inv.invoice_status in ('Sent', 'Pending Verification', 'Issued', 'Overdue'):
+                is_pending = True
+                billing_status = latest_inv.invoice_status
+
         return {
             "org_id": org_id,
             "org_name": metrics.get('org_name', f'Organization #{org_id}'),
@@ -315,7 +341,11 @@ class PaygBillingService:
             "discount_amount": 0.0,
             "gst_percent": tax_pct,
             "gst_amount": gst_amount,
-            "total_amount": total_amount
+            "total_amount": total_amount,
+            "latest_invoice": latest_inv_info,
+            "billing_status": billing_status,
+            "is_paid": is_paid,
+            "is_pending": is_pending
         }
 
     @classmethod

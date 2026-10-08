@@ -1683,7 +1683,7 @@ def preview_all_payg_bills():
             for org in orgs:
                 previews.append(PaygBillingService.calculate_payg_bill_breakdown(org.id))
 
-        total_projected_revenue = sum(p.get('total_amount', 0.0) for p in previews)
+        total_projected_revenue = sum(p.get('total_amount', 0.0) for p in previews if not p.get('is_paid'))
         return jsonify({
             "status": "success",
             "count": len(previews),
