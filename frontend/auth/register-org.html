@@ -643,6 +643,51 @@
             }
         }
 
+        let _emailCooldownInterval = null;
+        let _phoneCooldownInterval = null;
+
+        function startEmailCooldown(seconds = 90) {
+            if (_emailCooldownInterval) clearInterval(_emailCooldownInterval);
+            const btn = document.getElementById('sendOtpBtn');
+            if (!btn) return;
+            let remaining = seconds;
+            btn.disabled = true;
+            btn.innerHTML = `Resend in ${remaining}s`;
+
+            _emailCooldownInterval = setInterval(() => {
+                remaining -= 1;
+                if (remaining <= 0) {
+                    clearInterval(_emailCooldownInterval);
+                    _emailCooldownInterval = null;
+                    btn.disabled = false;
+                    btn.innerHTML = `Resend OTP`;
+                } else {
+                    btn.innerHTML = `Resend in ${remaining}s`;
+                }
+            }, 1000);
+        }
+
+        function startPhoneCooldown(seconds = 90) {
+            if (_phoneCooldownInterval) clearInterval(_phoneCooldownInterval);
+            const btn = document.getElementById('sendPhoneOtpBtn');
+            if (!btn) return;
+            let remaining = seconds;
+            btn.disabled = true;
+            btn.innerHTML = `Resend in ${remaining}s`;
+
+            _phoneCooldownInterval = setInterval(() => {
+                remaining -= 1;
+                if (remaining <= 0) {
+                    clearInterval(_phoneCooldownInterval);
+                    _phoneCooldownInterval = null;
+                    btn.disabled = false;
+                    btn.innerHTML = `Resend OTP`;
+                } else {
+                    btn.innerHTML = `Resend in ${remaining}s`;
+                }
+            }, 1000);
+        }
+
         async function sendOtp() {
             const email = document.getElementById('email').value.trim();
             if (!email) {
@@ -657,13 +702,17 @@
             try {
                 await api.post('/auth/request-registration-otp', { email });
                 document.getElementById('otpSection').style.display = 'block';
-                btn.innerHTML = `Resend OTP`;
+                startEmailCooldown(90);
                 if (window.lucide) lucide.createIcons();
             } catch (e) {
                 showError(e.message || "Failed to send OTP code.");
-                btn.innerHTML = `Send OTP`;
-            } finally {
-                btn.disabled = false;
+                const match = (e.message || '').match(/wait\s+(\d+)s/i);
+                if (match) {
+                    startEmailCooldown(parseInt(match[1], 10));
+                } else {
+                    btn.disabled = false;
+                    btn.innerHTML = `Send OTP`;
+                }
             }
         }
 
@@ -682,6 +731,10 @@
             try {
                 await api.post('/auth/verify-registration-otp', { email, otp });
                 isEmailVerified = true;
+                if (_emailCooldownInterval) {
+                    clearInterval(_emailCooldownInterval);
+                    _emailCooldownInterval = null;
+                }
                 document.getElementById('otpSuccess').style.display = 'inline-flex';
                 btn.style.display = 'none';
                 document.getElementById('otp_code').disabled = true;
@@ -710,13 +763,17 @@
             try {
                 const res = await api.post('/auth/request-phone-otp', { phone });
                 document.getElementById('phoneOtpSection').style.display = 'block';
-                btn.innerHTML = `Resend OTP`;
+                startPhoneCooldown(90);
                 if (window.lucide) lucide.createIcons();
             } catch (e) {
                 showError(e.message || "Failed to send phone OTP code.");
-                btn.innerHTML = `Send OTP`;
-            } finally {
-                btn.disabled = false;
+                const match = (e.message || '').match(/wait\s+(\d+)s/i);
+                if (match) {
+                    startPhoneCooldown(parseInt(match[1], 10));
+                } else {
+                    btn.disabled = false;
+                    btn.innerHTML = `Send OTP`;
+                }
             }
         }
 
@@ -735,6 +792,10 @@
             try {
                 await api.post('/auth/verify-phone-otp', { phone, otp });
                 isPhoneVerified = true;
+                if (_phoneCooldownInterval) {
+                    clearInterval(_phoneCooldownInterval);
+                    _phoneCooldownInterval = null;
+                }
                 document.getElementById('phoneOtpSuccess').style.display = 'inline-flex';
                 btn.style.display = 'none';
                 document.getElementById('phone_otp_code').disabled = true;

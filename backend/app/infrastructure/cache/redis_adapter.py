@@ -237,18 +237,23 @@ class CacheAdapter:
 
         if self._redis_client:
             try:
+                member_key = f"{now}:{secrets.token_hex(4)}"
                 pipe = self._redis_client.pipeline()
                 pipe.zremrangebyscore(key, 0, window_start)
-                pipe.zadd(key, {f"{now}:{secrets.token_hex(4)}": now})
+                pipe.zadd(key, {member_key: now})
                 pipe.zcard(key)
                 pipe.expire(key, window_seconds * 2)
                 results = pipe.execute()
                 current_count = results[2]
 
                 if current_count > max_requests:
+                    try:
+                        self._redis_client.zrem(key, member_key)
+                    except Exception:
+                        pass
                     oldest = self._redis_client.zrange(key, 0, 0, withscores=True)
                     retry_after = int(window_seconds - (now - oldest[0][1])) if oldest else window_seconds
-                    return True, current_count, max(1, retry_after)
+                    return True, current_count, max(1, min(retry_after, window_seconds))
                 return False, current_count, 0
             except Exception as e:
                 if is_security_critical and self.is_production:
@@ -262,9 +267,10 @@ class CacheAdapter:
             self._sliding_windows[key] = timestamps
 
             if len(timestamps) > max_requests:
-                oldest_ts = timestamps[0]
+                timestamps.pop()
+                oldest_ts = timestamps[0] if timestamps else now
                 retry_after = int(window_seconds - (now - oldest_ts))
-                return True, len(timestamps), max(1, retry_after)
+                return True, len(timestamps) + 1, max(1, min(retry_after, window_seconds))
             return False, len(timestamps), 0
 
     # ─────────────────────────────────────────────────────────────────────────

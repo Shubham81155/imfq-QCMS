@@ -302,7 +302,7 @@ def register_security_middleware(app):
                 return resp, 429
             return
 
-        # OTP endpoints rate limit: 3 requests per 10 minutes (600s)
+        # OTP endpoints rate limit: 5 requests per 90 seconds (Max lockout duration = 90s)
         otp_endpoints = (
             '/api/auth/request-registration-otp',
             '/api/auth/request-phone-otp',
@@ -312,8 +312,11 @@ def register_security_middleware(app):
             '/api/auth/forgot-password'
         )
         if any(path.startswith(ep) for ep in otp_endpoints):
-            is_limited, retry_after = _check_rate_limit(client_ip, 3, window_seconds=600, bucket_key="otp")
+            otp_max_window = int(os.environ.get('OTP_RATE_LIMIT_WINDOW', 90))
+            otp_max_requests = int(os.environ.get('OTP_RATE_LIMIT_MAX', 5))
+            is_limited, retry_after = _check_rate_limit(client_ip, otp_max_requests, window_seconds=otp_max_window, bucket_key="otp")
             if is_limited:
+                retry_after = min(max(1, retry_after), otp_max_window)
                 _log_threat(client_ip, f'Rate limit exceeded on OTP route {path}')
                 resp = jsonify({
                     'status': 'error',
