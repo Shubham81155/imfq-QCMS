@@ -754,7 +754,7 @@
     </div>
 
     <script src="/assets/dist/bootstrap.bundle.min.js"></script>
-    <script src="/assets/dist/core-bundle.16ff7d33.min.js"></script>
+    <script src="/assets/dist/core-bundle.51dffe3a.min.js"></script>
     <script>
         const tmDash = {
             projects: [], // Personal workstation projects
@@ -1064,7 +1064,8 @@
                         `;
                     } else {
                         const meetingsListHtml = meetings.map(m => {
-                            const dt = new Date(m.scheduled_at);
+                            const rawDateStr = (m.scheduled_at || '').replace(/Z$/, '');
+                            const dt = new Date(rawDateStr);
                             const timeStr = dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                             const dateStr = dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
                             const isOnline = m.meeting_type === 'online';

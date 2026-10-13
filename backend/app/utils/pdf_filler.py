@@ -165,9 +165,14 @@ def generate_fishbone_svg(fishbone_items, project_title):
     if fishbone_items and isinstance(fishbone_items, list):
         for item in fishbone_items:
             cat = str(item.get('category') or '').upper()
-            txt = item.get('level1') or item.get('level2') or item.get('cause') or item.get('description') or item.get('name') or ''
-            if not txt or not isinstance(txt, str): continue
-            txt_clean = txt.strip()
+            l1 = str(item.get('level1') or '').strip()
+            l2 = str(item.get('level2') or '').strip()
+            if l1 and l2:
+                txt_clean = f"{l1}: {l2}"
+            else:
+                txt = l1 or l2 or item.get('cause') or item.get('description') or item.get('name') or ''
+                if not txt or not isinstance(txt, str): continue
+                txt_clean = txt.strip()
             if not txt_clean: continue
 
             if 'MAN' in cat or 'PEOPLE' in cat:
@@ -185,7 +190,7 @@ def generate_fishbone_svg(fishbone_items, project_title):
 
     has_any_cause = any(len(v) > 0 for v in causes.values())
     if not has_any_cause:
-        causes['MACHINE'] = ["Nozzle wear"]
+        causes['METHOD'] = ["Analysis in progress"]
 
     title_short = project_title[:16] + ".." if len(project_title) > 18 else project_title
 
@@ -223,7 +228,7 @@ def generate_fishbone_svg(fishbone_items, project_title):
             sub_branches_svg += f'<line x1="{sub_x1:.1f}" y1="{sub_y1:.1f}" x2="{bx:.1f}" y2="{by:.1f}" stroke="#64748b" stroke-width="1" stroke-dasharray="2,1"/>\n'
             sub_branches_svg += f'<circle cx="{bx:.1f}" cy="{by:.1f}" r="2" fill="{fill_col}"/>\n'
 
-            c_short = c_txt[:16] + ".." if len(c_txt) > 18 else c_txt
+            c_short = c_txt[:20] + ".." if len(c_txt) > 22 else c_txt
             text_y = sub_y1 - 3 if is_upper else sub_y1 + 7
             sub_branches_svg += f'<text x="{sub_x1:.1f}" y="{text_y:.1f}" font-size="5.5" fill="#1e293b" font-weight="500">• {html.escape(c_short)}</text>\n'
 
@@ -1012,8 +1017,13 @@ def build_qc_story_html(project_id):
     if not project_title or project_title == "--":
         project_title = "QC Story Project"
 
-    team_name = get_v(s1, d1, "init.circle_name")
+    team_name = get_v(s1, d1, "team.circle_name")
+    if team_name == "--": team_name = get_v(s1, d1, "init.circle_name")
+    if team_name == "--": team_name = get_v(s1, d1, "project_team.circle_name")
+    if team_name == "--": team_name = get_v(s1, d1, "circle_name")
+    if team_name == "--": team_name = getattr(project, 'circle_name', None) or "--"
     if team_name == "--": team_name = f"{project.department.name if project.department else 'Quality'} QC Circle"
+
 
     plant_val = (project.plant or "").strip()
     if not plant_val or plant_val == "--":
@@ -1319,9 +1329,29 @@ def build_qc_story_html(project_id):
         pass
 
     # Section 3 — Pareto
-    # Exact same data source as Stage 3 initPareto() in stage3.js:
-    # s2.data_collection.check_sheet  →  list of {category, count}
+    # Cascade: data_collection.check_sheet -> d2.pareto -> d2.check_sheet -> d2.checksheet -> data_collection.pareto -> aggregate observations
     check_sheet_data = (d2.get('data_collection') or {}).get('check_sheet') or []
+    if not check_sheet_data and isinstance(d2.get('pareto'), list):
+        check_sheet_data = d2.get('pareto') or []
+    if not check_sheet_data and isinstance(d2.get('check_sheet'), list):
+        check_sheet_data = d2.get('check_sheet') or []
+    if not check_sheet_data and isinstance(d2.get('checksheet'), list):
+        check_sheet_data = d2.get('checksheet') or []
+    if not check_sheet_data and isinstance((d2.get('data_collection') or {}).get('pareto'), list):
+        check_sheet_data = (d2.get('data_collection') or {}).get('pareto') or []
+    if not check_sheet_data:
+        raw_obs = (d2.get('data_collection') or {}).get('observations') or d2.get('observations') or []
+        if isinstance(raw_obs, list) and len(raw_obs) > 0:
+            cat_counts = {}
+            for o in raw_obs:
+                if isinstance(o, dict):
+                    c = o.get('category') or o.get('defect') or o.get('name') or 'Other'
+                    v = o.get('value') or o.get('count') or o.get('val') or 1
+                    try:
+                        cat_counts[str(c).strip()] = cat_counts.get(str(c).strip(), 0.0) + float(v)
+                    except (ValueError, TypeError):
+                        pass
+            check_sheet_data = [{'category': k, 'count': v} for k, v in cat_counts.items()]
 
     # Build valid_p for observation text
     valid_p = []
@@ -1352,7 +1382,8 @@ def build_qc_story_html(project_id):
     # Generate Dynamic SVG Pareto Chart — same source as Stage 3 QC Tool 4
     pareto_svg_html = generate_pareto_svg(check_sheet_data)
 
-    # Generate Dynamic SVG Fishbone Diagram from Post-Verification Fishbone (Verified Causes)
+    # Generate Dynamic SVG Fishbone Diagram
+    # Cascade: L3 diagram data -> L2 6M Fishbone -> L1 Fishbone -> cause_and_effect -> cause_register
     fb_post_verification = []
     if isinstance(d3.get('fishbone_l3'), dict):
         fb_post_verification = d3.get('fishbone_l3', {}).get('diagram_data') or []
@@ -1362,19 +1393,52 @@ def build_qc_story_html(project_id):
     if not fb_post_verification:
         fb_post_verification = d3.get('fishbone_l3_rows') or []
 
+    if not fb_post_verification and isinstance(d3.get('fishbone_l2'), list):
+        fb_post_verification = d3.get('fishbone_l2') or []
+
+    if not fb_post_verification and isinstance(d3.get('fishbone_l1'), list):
+        fb_post_verification = d3.get('fishbone_l1') or []
+
+    if not fb_post_verification and isinstance(d3.get('cause_and_effect'), list):
+        fb_post_verification = d3.get('cause_and_effect') or []
+
+    if not fb_post_verification and isinstance(d3.get('cause_register'), list):
+        fb_post_verification = d3.get('cause_register') or []
+
     fishbone_svg_html = generate_fishbone_svg(fb_post_verification, project_title)
 
     # Section 4 - 5-Why Chain
-    why_chain = d4.get('why_why_analysis') or []
+    why_chain = d4.get('why_why_analysis') or d4.get('five_why_analysis') or []
+    if not why_chain:
+        rc_reg = d4.get('root_cause_register') or d4.get('root_causes') or []
+        if isinstance(rc_reg, list) and rc_reg:
+            why_chain = []
+            for r in rc_reg:
+                if isinstance(r, dict):
+                    rc_text = r.get('root_cause') or r.get('cause') or ''
+                    if rc_text:
+                        why_chain.append({
+                            'problem': r.get('source') or 'Identified Root Cause',
+                            'why1': '--',
+                            'why2': '--',
+                            'why3': '--',
+                            'why4': '--',
+                            'why5': rc_text,
+                            'root_cause': rc_text,
+                            'val5': 'Verified root cause register'
+                        })
     why_rows_html = ""
     if why_chain and isinstance(why_chain, list) and len(why_chain) > 0:
         for idx, item in enumerate(why_chain[:2]):
             cat = item.get('category') or item.get('problem') or f'Root Cause Chain {idx+1}'
-            why1 = item.get('why1') or '--'
-            why2 = item.get('why2') or '--'
-            why3 = item.get('why3') or '--'
-            why4 = item.get('why4') or '--'
-            why5 = item.get('why5') or '--'
+            why1 = (item.get('why1') or '').strip() or '--'
+            why2 = (item.get('why2') or '').strip() or '--'
+            why3 = (item.get('why3') or '').strip() or '--'
+            why4 = (item.get('why4') or '').strip() or '--'
+
+            raw_why5 = (item.get('why5') or '').strip()
+            raw_rc = (item.get('root_cause') or '').strip()
+            why5 = raw_why5 if raw_why5 and raw_why5 != '--' else (raw_rc if raw_rc else '--')
 
             v1 = (item.get('val1') or item.get('validation_method1') or '').strip() or '--'
             v2 = (item.get('val2') or item.get('validation_method2') or '').strip() or '--'
@@ -1877,7 +1941,7 @@ def build_qc_story_html(project_id):
       <table class="data-table">
         <tr>
           <th style="width: 13%;">Project Title</th>
-          <td colspan="3" style="font-weight: bold; color: #1e3a8a;">{html.escape(project_title)}</td>
+          <td colspan="3" style="font-weight: bold; color: #1e3a8a;">{html.escape(project_title)}{f' <span style="font-size: 8pt; color: #475569; font-weight: normal;">(Circle: {html.escape(team_name)})</span>' if team_name and team_name != '--' else ''}</td>
           <th style="width: 13%;">Project No.</th>
           <td>{html.escape(doc_id)}</td>
         </tr>
