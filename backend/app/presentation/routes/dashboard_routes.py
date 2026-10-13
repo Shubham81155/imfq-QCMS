@@ -9,7 +9,7 @@ from app.infrastructure.database.models.models import (
     User, Project, Stage4Solution, Stage6Implementation, Stage7Impact,
     Stage8Standardization, KPIMetric, KPIDashboardCache, Department, ProjectMeeting, db
 )
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from sqlalchemy import func
 from sqlalchemy.orm import joinedload
 
@@ -331,14 +331,17 @@ def get_dashboard_meetings():
             return jsonify({"msg": "User not found"}), 404
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)
+    # Allow a 24-hour lookback buffer so meetings scheduled in local wall-clock time
+    # are not prematurely filtered across timezones before the frontend determines concluded status
+    query_threshold = now - timedelta(hours=24)
     user_is_sa = bool(user and user.role and user.role.name == 'SuperAdmin')
 
-    # Base query for future meetings with eager loaded project
+    # Base query for future/recent meetings with eager loaded project
     query = (
         ProjectMeeting.query
         .options(joinedload(ProjectMeeting.project))
         .join(Project, ProjectMeeting.project_id == Project.id)
-        .filter(ProjectMeeting.scheduled_at >= now)
+        .filter(ProjectMeeting.scheduled_at >= query_threshold)
     )
     if not user_is_sa:
         query = query.filter(Project.org_id == user.org_id)
@@ -363,7 +366,7 @@ def get_dashboard_meetings():
         "project_title": m.project.title if m.project else "Unknown",
         "stage_id": m.stage_id,
         "title": m.title,
-        "scheduled_at": m.scheduled_at.isoformat() + "Z" if m.scheduled_at else None,
+        "scheduled_at": m.scheduled_at.isoformat() if m.scheduled_at else None,
         "duration": m.duration,
         "duration_minutes": m.duration,
         "meeting_type": m.meeting_type,

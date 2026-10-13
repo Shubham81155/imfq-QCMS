@@ -2375,16 +2375,18 @@ const ProjectApp = {
             }
 
             listContainer.innerHTML = meetings.map(m => {
-                const dateStr = new Date(m.scheduled_at).toLocaleDateString(undefined, {
+                const rawDateStr = (m.scheduled_at || '').replace(/Z$/, '');
+                const dt = new Date(rawDateStr);
+                const dateStr = dt.toLocaleDateString(undefined, {
                     weekday: 'short', month: 'short', day: 'numeric', year: 'numeric'
                 });
-                const timeStr = new Date(m.scheduled_at).toLocaleTimeString(undefined, {
+                const timeStr = dt.toLocaleTimeString(undefined, {
                     hour: '2-digit', minute: '2-digit'
                 });
                 const duration = m.duration;
                 
                 const isOnline = m.meeting_type === 'online';
-                const scheduledTime = new Date(m.scheduled_at).getTime();
+                const scheduledTime = dt.getTime();
                 const durationMs = (parseInt(duration) || 30) * 60 * 1000;
                 const isPast = (scheduledTime + durationMs) < now;
                 const isMeetingDone = isProjectClosed || isPast;
@@ -2458,7 +2460,8 @@ const ProjectApp = {
         const m = (this.stageMeetings || []).find(item => item.id === meetingId);
         if (!m) return;
 
-        const dt = new Date(m.scheduled_at);
+        const rawDateStr = (m.scheduled_at || '').replace(/Z$/, '');
+        const dt = new Date(rawDateStr);
         const dateStr = dt.toLocaleDateString(undefined, {
             weekday: 'short', month: 'short', day: 'numeric', year: 'numeric'
         });

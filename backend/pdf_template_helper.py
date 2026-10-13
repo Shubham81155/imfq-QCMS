@@ -642,7 +642,11 @@ def build_qc_story_html(project_id):
     project_title = get_v(s1, d1, "theme_target_schedule.improvement_theme")
     if project_title == "--": project_title = project.title or "--"
 
-    team_name = get_v(s1, d1, "init.circle_name")
+    team_name = get_v(s1, d1, "team.circle_name")
+    if team_name == "--": team_name = get_v(s1, d1, "init.circle_name")
+    if team_name == "--": team_name = get_v(s1, d1, "project_team.circle_name")
+    if team_name == "--": team_name = get_v(s1, d1, "circle_name")
+    if team_name == "--": team_name = getattr(project, 'circle_name', None) or "--"
     if team_name == "--": team_name = f"{project.department.name if project.department else 'Quality'} QC Circle" if project.department else "--"
 
     plant_where = get_v(s1, d1, 'background_5w2h.where')
@@ -694,17 +698,37 @@ def build_qc_story_html(project_id):
         elif 'MATERIAL' in cat and cause: material_cause = cause
 
     # Section 4 - 5-Why Chain
-    why_chain = d4.get('why_why_analysis') or []
+    why_chain = d4.get('why_why_analysis') or d4.get('five_why_analysis') or []
+    if not why_chain:
+        rc_reg = d4.get('root_cause_register') or d4.get('root_causes') or []
+        if isinstance(rc_reg, list) and rc_reg:
+            why_chain = []
+            for r in rc_reg:
+                if isinstance(r, dict):
+                    rc_text = r.get('root_cause') or r.get('cause') or ''
+                    if rc_text:
+                        why_chain.append({
+                            'category': r.get('source') or 'Identified Root Cause',
+                            'why1': '--',
+                            'why2': '--',
+                            'why3': '--',
+                            'why4': '--',
+                            'why5': rc_text,
+                            'root_cause': rc_text,
+                            'verification': 'Verified root cause register'
+                        })
     why_rows_html = ""
     if why_chain and isinstance(why_chain, list):
         for idx, item in enumerate(why_chain[:2]):
-            cat = item.get('category') or f'Root Cause {idx+1}'
-            why1 = item.get('why1') or '--'
-            why2 = item.get('why2') or '--'
-            why3 = item.get('why3') or '--'
-            why4 = item.get('why4') or '--'
-            why5 = item.get('why5') or '--'
-            val = item.get('verification') or '--'
+            cat = item.get('category') or item.get('problem') or f'Root Cause {idx+1}'
+            why1 = (item.get('why1') or '').strip() or '--'
+            why2 = (item.get('why2') or '').strip() or '--'
+            why3 = (item.get('why3') or '').strip() or '--'
+            why4 = (item.get('why4') or '').strip() or '--'
+            raw_why5 = (item.get('why5') or '').strip()
+            raw_rc = (item.get('root_cause') or '').strip()
+            why5 = raw_why5 if raw_why5 and raw_why5 != '--' else (raw_rc if raw_rc else '--')
+            val = (item.get('verification') or item.get('val5') or item.get('validation') or '').strip() or '--'
 
             if any(w != '--' for w in [why1, why2, why3, why4, why5]):
                 why_rows_html += f'''
